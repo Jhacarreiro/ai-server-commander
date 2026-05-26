@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { getPendingNotices } = require('./notices');
 
 // Create a persistent shell
 let shell;
@@ -59,6 +60,11 @@ let output = "";
  *                 output:
  *                   type: string
  *                   description: The output of the executed command.
+ *                 notices:
+ *                   type: array
+ *                   description: Pending notices attached to the command response.
+ *                   items:
+ *                     type: object
  *       '400':
  *         description: Bad request (e.g., missing command parameter).
  *       '500':
@@ -110,12 +116,14 @@ function terminalHandler(req, res) {
         console.log(`Command executed successfully. Output: ${output}`);
         shell.stdout.removeListener('data', getOutput);
         shell.stderr.removeListener('data', getError);
+        const notices = getPendingNotices();
         if (output.length < 4097) {
-            return res.status(200).json({message: 'Command executed successfully.', output});
+            return res.status(200).json({message: 'Command executed successfully.', output, notices});
         } else {
             return res.status(200).json({
                 message: 'Command executed successfully. But size is too big, returning 3900 first symbols',
-                output: output.substr(0, 3900)
+                output: output.substr(0, 3900),
+                notices
             });
         }
     }

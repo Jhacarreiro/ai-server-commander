@@ -76,3 +76,49 @@ Or Twitter/X https://x.com/wonderwhy_er
 ## License
 
 The project is licensed under the MIT License.
+
+## Pending notices
+
+Other local tools can leave short notices for the ChatGPT action to see on the next terminal response. Notices are kept in memory and are returned with terminal command responses until they are acknowledged or expire.
+
+Create a notice:
+
+```http
+POST /api/notices
+Content-Type: application/json
+
+{
+  "level": "warning",
+  "source": "local-supervisor",
+  "text": "Check that you are editing the live config file, not a generated copy.",
+  "ttlSeconds": 1800
+}
+```
+
+Run a terminal command as usual. If any notices are pending, the response includes them:
+
+```json
+{
+  "message": "Command executed successfully.",
+  "output": "...",
+  "notices": [
+    {
+      "id": "notice_...",
+      "level": "warning",
+      "source": "local-supervisor",
+      "text": "Check that you are editing the live config file, not a generated copy.",
+      "createdAt": "2026-05-26T12:00:00.000Z",
+      "expiresAt": "2026-05-26T12:30:00.000Z",
+      "deliveredAt": "2026-05-26T12:00:05.000Z",
+      "deliveredCount": 1
+    }
+  ]
+}
+```
+
+Acknowledge a notice so it stops appearing:
+
+```http
+POST /api/notices/{id}/ack
+```
+

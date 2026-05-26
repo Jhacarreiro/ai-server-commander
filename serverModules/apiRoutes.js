@@ -1,4 +1,5 @@
 const {terminalHandler, interruptHandler} = require('../api/terminal');
+const {createNoticeHandler, pendingNoticesHandler, ackNoticeHandler} = require('../api/notices');
 
 //const createAppHandlerWithUrl = require('../api/firebase'); // Modify import to pass getURL function
 const exitApplicationHandler = require('../api/exitApplicationHandler');
@@ -29,6 +30,9 @@ module.exports = {
               .get(createAppHandler); // Add support for GET requests*/
         app.get('/api/server-url', require('../api/getServerUrlHandler')(getURL));
         app.get('/api/logs', require('../api/getLogsHandler'));
+        app.post('/api/notices', createNoticeHandler);
+        app.get('/api/notices/pending', pendingNoticesHandler);
+        app.post('/api/notices/:id/ack', ackNoticeHandler);
         app.post('/api/restart', exitApplicationHandler(close));
         app.post("/api/interrupt", interruptHandler);
         app.post('/api/read-or-edit-file', readEditTextFileHandler);
