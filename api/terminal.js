@@ -63,12 +63,82 @@ let output = "";
  *         description: Bad request (e.g., missing command parameter).
  *       '500':
  *         description: Internal server error (e.g., error executing command).
+
+ *   post:
+ *     summary: Execute a shell command using a JSON request body.
+ *     description: Compatibility endpoint for executing arbitrary shell commands without placing the command in the query string. Prefer this over GET so commands do not appear in URL logs.
+ *     operationId: runTerminalScriptPost
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - command
+ *             properties:
+ *               command:
+ *                 type: string
+ *                 description: The shell command to execute.
+ *     responses:
+ *       '200':
+ *         description: Command executed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 output:
+ *                   type: string
+ *       '400':
+ *         description: Bad request (e.g., missing command parameter).
+ *       '500':
+ *         description: Internal server error (e.g., error executing command).
+ */
+
+/**
+ * @openapi
+ * /v1/commands/execute:
+ *   post:
+ *     summary: Execute a shell command using a JSON request body.
+ *     description: Versioned command execution endpoint. It behaves like POST /api/runTerminalScript, but gives integrations a stable POST endpoint that avoids putting commands in query strings.
+ *     operationId: executeCommand
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - command
+ *             properties:
+ *               command:
+ *                 type: string
+ *                 description: The shell command to execute.
+ *     responses:
+ *       '200':
+ *         description: Command executed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 output:
+ *                   type: string
+ *       '400':
+ *         description: Bad request (e.g., missing command parameter).
+ *       '500':
+ *         description: Internal server error (e.g., error executing command).
  */
 function terminalHandler(req, res) {
     console.log('execute command');
     res.setHeader('Access-Control-Allow-Origin', 'https://chat.openai.com');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, openai-conversation-id, openai-ephemeral-user-id');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, openai-conversation-id, openai-ephemeral-user-id');
     res.setHeader('Access-Control-Allow-Credentials', true);
 
     // Handle preflight request (OPTIONS method)
@@ -77,8 +147,10 @@ function terminalHandler(req, res) {
         return;
     }
 
-    const command = req.query.command;
-    if (!command) {
+    const command = req.method === 'POST'
+        ? (req.body && req.body.command) || req.query.command
+        : req.query.command;
+    if (!command || typeof command !== 'string') {
         return res.status(400).json({message: 'Command parameter is required.'});
     }
 

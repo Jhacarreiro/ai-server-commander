@@ -76,3 +76,34 @@ Or Twitter/X https://x.com/wonderwhy_er
 ## License
 
 The project is licensed under the MIT License.
+
+## Command execution endpoints
+
+The original command endpoint remains available for backwards compatibility:
+
+```http
+GET /api/runTerminalScript?command=pwd
+```
+
+For new integrations, prefer sending commands in a JSON request body so command strings do not appear in URL logs:
+
+```http
+POST /api/runTerminalScript
+Content-Type: application/json
+
+{
+  "command": "pwd"
+}
+```
+
+A versioned alias is also available for integrations that prefer a stable v1 route:
+
+```http
+POST /v1/commands/execute
+Content-Type: application/json
+
+{
+  "command": "pwd"
+}
+```
+
