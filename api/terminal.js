@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const { getPendingNotices } = require('./notices');
+const { appendActivity, preview, hashText } = require('./activityLog');
 
 // Create a persistent shell
 let shell;
@@ -88,9 +89,20 @@ function terminalHandler(req, res) {
         return res.status(400).json({message: 'Command parameter is required.'});
     }
 
+    const activityId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const startedAtMs = Date.now();
+    appendActivity({
+        type: 'command_started',
+        id: activityId,
+        commandHash: hashText(command),
+        commandPreview: preview(command, 240)
+    });
+
+    let didTimeOut = false;
     const getOutput = (data) => {
         let timeoutId = setTimeout(() => {
             console.log("Command timed out.");
+            didTimeOut = true;
             shell.stdin.write("\x03"); // Send Ctrl+C to interrupt
             processOutput(output + "\n[INFO] Command timed out.");
             output = "";
@@ -117,6 +129,19 @@ function terminalHandler(req, res) {
         shell.stdout.removeListener('data', getOutput);
         shell.stderr.removeListener('data', getError);
         const notices = getPendingNotices();
+        appendActivity({
+            type: 'command_finished',
+            id: activityId,
+            commandHash: hashText(command),
+            exitCode: didTimeOut ? 124 : 0,
+            timedOut: didTimeOut,
+            durationMs: Date.now() - startedAtMs,
+            outputLength: output.length,
+            outputTruncated: output.length >= 4097,
+            outputPreview: preview(output, 1200),
+            noticesCount: notices.length,
+            errorPreview: null
+        });
         if (output.length < 4097) {
             return res.status(200).json({message: 'Command executed successfully.', output, notices});
         } else {

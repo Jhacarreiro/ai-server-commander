@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { appendActivity, preview } = require('./activityLog');
 
 const notices = [];
 const DEFAULT_TTL_SECONDS = 60 * 60;
@@ -128,6 +129,7 @@ function createNoticeHandler(req, res) {
 
     notices.push(notice);
     pruneExpired();
+    appendActivity({ type: 'notice_created', id: notice.id, level, source, textPreview: preview(text, 240), ttlSeconds });
     return res.status(201).json({ message: 'Notice queued.', notice: publicNotice(notice) });
 }
 
@@ -147,7 +149,9 @@ function pendingNoticesHandler(req, res) {
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
-    return res.status(200).json({ notices: getPendingNotices() });
+    const pending = getPendingNotices();
+    appendActivity({ type: 'notices_listed', count: pending.length });
+    return res.status(200).json({ notices: pending });
 }
 
 /**
@@ -181,6 +185,7 @@ function ackNoticeHandler(req, res) {
     }
 
     notice.ackedAt = nowIso();
+    appendActivity({ type: 'notice_acked', id: req.params.id, level: notice.level, source: notice.source });
     pruneExpired();
     return res.status(200).json({ message: 'Notice acknowledged.', id: req.params.id });
 }

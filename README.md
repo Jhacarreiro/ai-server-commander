@@ -122,3 +122,38 @@ Acknowledge a notice so it stops appearing:
 POST /api/notices/{id}/ack
 ```
 
+## Activity log
+
+Server Commander can keep a small automatic activity log for command and notice lifecycle events. The log is local to the running server and is exposed through:
+
+```http
+GET /api/activity?limit=50
+GET /api/activity/status
+```
+
+The log records events such as:
+
+```text
+command_started
+command_finished
+notice_created
+notices_listed
+notice_acked
+```
+
+`command_finished` events include metadata and a redacted/truncated output preview:
+
+```json
+{
+  "type": "command_finished",
+  "exitCode": 0,
+  "timedOut": false,
+  "durationMs": 137,
+  "outputLength": 5134,
+  "outputTruncated": true,
+  "outputPreview": "short redacted preview of stdout/stderr"
+}
+```
+
+This is intended as lightweight operational visibility for integrations. It does not store full stdout/stderr.
+
