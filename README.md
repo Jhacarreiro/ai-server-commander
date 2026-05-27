@@ -157,3 +157,16 @@ notice_acked
 
 This is intended as lightweight operational visibility for integrations. It does not store full stdout/stderr.
 
+
+
+Activity logs can also be queried by scope:
+
+```http
+GET /api/activity?scope=global&limit=50
+GET /api/activity?scope=conversation&conversationId=...
+GET /api/activity?scope=task&taskId=...
+GET /api/activity/index
+POST /api/activity/context
+```
+
+`POST /api/activity/context` associates a conversation with a stable `taskId`/`taskTitle`, which helps integrations keep simultaneous work streams separate.

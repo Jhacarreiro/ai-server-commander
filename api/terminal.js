@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
 const { getPendingNotices } = require('./notices');
-const { appendActivity, preview, hashText } = require('./activityLog');
+const { appendActivity, preview, hashText, getActivityContext } = require('./activityLog');
 
 // Create a persistent shell
 let shell;
@@ -89,6 +89,7 @@ function terminalHandler(req, res) {
         return res.status(400).json({message: 'Command parameter is required.'});
     }
 
+    const activityContext = getActivityContext(req);
     const activityId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const startedAtMs = Date.now();
     appendActivity({
@@ -96,7 +97,7 @@ function terminalHandler(req, res) {
         id: activityId,
         commandHash: hashText(command),
         commandPreview: preview(command, 240)
-    });
+    }, activityContext);
 
     let didTimeOut = false;
     const getOutput = (data) => {
@@ -141,7 +142,7 @@ function terminalHandler(req, res) {
             outputPreview: preview(output, 1200),
             noticesCount: notices.length,
             errorPreview: null
-        });
+        }, activityContext);
         if (output.length < 4097) {
             return res.status(200).json({message: 'Command executed successfully.', output, notices});
         } else {
