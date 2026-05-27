@@ -1,6 +1,6 @@
 const {terminalHandler, interruptHandler} = require('../api/terminal');
 const {createNoticeHandler, pendingNoticesHandler, ackNoticeHandler} = require('../api/notices');
-const {activityHandler, activityStatusHandler} = require('../api/activityLog');
+const {activityHandler, activityStatusHandler, activityIndexHandler, activityContextHandler} = require('../api/activityLog');
 
 //const createAppHandlerWithUrl = require('../api/firebase'); // Modify import to pass getURL function
 const exitApplicationHandler = require('../api/exitApplicationHandler');
@@ -33,6 +33,8 @@ module.exports = {
         app.get('/api/logs', require('../api/getLogsHandler'));
         app.get('/api/activity', activityHandler);
         app.get('/api/activity/status', activityStatusHandler);
+        app.get('/api/activity/index', activityIndexHandler);
+        app.post('/api/activity/context', activityContextHandler);
         app.post('/api/notices', createNoticeHandler);
         app.get('/api/notices/pending', pendingNoticesHandler);
         app.post('/api/notices/:id/ack', ackNoticeHandler);
