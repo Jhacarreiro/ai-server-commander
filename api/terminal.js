@@ -129,7 +129,7 @@ function terminalHandler(req, res) {
         console.log(`Command executed successfully. Output: ${output}`);
         shell.stdout.removeListener('data', getOutput);
         shell.stderr.removeListener('data', getError);
-        const notices = getPendingNotices();
+        const notices = getPendingNotices(activityContext);
         appendActivity({
             type: 'command_finished',
             id: activityId,

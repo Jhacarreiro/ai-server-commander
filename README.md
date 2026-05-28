@@ -170,3 +170,17 @@ POST /api/activity/context
 ```
 
 `POST /api/activity/context` associates a conversation with a stable `taskId`/`taskTitle`, which helps integrations keep simultaneous work streams separate.
+
+
+## Scoped notices
+
+Notices support scoped delivery:
+
+```text
+no conversationId/taskId -> global notice, visible to any terminal response
+conversationId only      -> visible only to that conversation
+taskId only              -> visible only to that task
+both                     -> visible only when both match
+```
+
+This is useful when several ChatGPT conversations use the same Server Commander at the same time.
