@@ -1,7 +1,16 @@
 module.exports = (log, config) => ((req, res, next) => {
     const bearerHeader = req.headers['authorization'];
-    const fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+    const rawUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+    const fullUrl = rawUrl.replace(/([?&]token=)[^&]+/g, '$1***');
     log('request auth check', fullUrl, Object.keys(req.headers));
+
+    const queryToken = req.path === '/mcp' && req.query && typeof req.query.token === 'string' ? req.query.token : undefined;
+    const expectedMcpToken = config.mcpToken || config.authToken;
+    if (queryToken && queryToken === expectedMcpToken) {
+        next();
+        return;
+    }
+
     if (typeof bearerHeader !== 'undefined') {
         const bearerToken = bearerHeader.split(' ')[1];
         // Verify the token here (e.g., using a library like jsonwebtoken)
