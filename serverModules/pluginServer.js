@@ -20,6 +20,7 @@ module.exports = async () => {
     const expressApp = express();
     const server = http.createServer(expressApp);
     expressApp.use(express.json());
+    expressApp.use(express.urlencoded({ extended: false }));
 
     log('serving static from', path.join(__dirname, '..', 'public'));
     expressApp.use(express.static(path.join(__dirname, '..', 'public')));

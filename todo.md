@@ -1,5 +1,8 @@
 # To - Do List
 
+> Current cross-client roadmap lives in [ROADMAP.md](./ROADMAP.md). This file is a legacy scratch todo list kept for historical context.
+
+
 # # API Handling and Updates
 
   -
