@@ -1,15 +1,27 @@
 # ChatGPT Server Commander
 <img src="https://raw.githubusercontent.com/wonderwhy-er/ChatGPTServerCommander/main/logo4.png" width="350pxp" height="350px"/>
-This project is a server that exposes terminal commands and file editing functionality as an API for ChatGPT Actions. In essence, it allows you to control any machine where you install this with ChatGPT. Install, run, and edit anything, even itself.
+This project is a server that exposes terminal commands and file editing functionality to assistant clients. It started as an API for ChatGPT Actions and now also exposes a remote MCP endpoint for Claude and other MCP-capable clients. In essence, it allows an approved assistant session to control any machine where you install this. Install, run, and edit anything, even itself.
 
 ## Video Demo
 [![Watch here](https://img.youtube.com/vi/8wMOferdWeA/maxresdefault.jpg)]([https://youtu.be/VIDEO_ID](https://youtu.be/8wMOferdWeA?t=1333))
 
 ## Features
 
-- Execute server commands through a REST API that is compatible with Custom ChatGPT actions
+- Execute server commands through a REST API that is compatible with Custom ChatGPT actions.
+- Execute server commands through a remote MCP endpoint compatible with Claude connectors and other MCP clients.
+- Reuse the same server-side capabilities across ChatGPT and Claude wherever possible, with REST/OpenAPI and MCP acting as adapters over shared behavior.
 - Interface with external APIs and services.
-- Local Tunnel integration for easy access to the server running on a local machine, making the API accessible to ChatGPT.
+- Local Tunnel / public HTTPS deployment support for making the server reachable by assistant clients.
+
+## Assistant clients and usage limits
+
+Server Commander does not provide model access and does not bypass usage limits. The assistant that calls it still runs inside its own product, account and plan limits.
+
+- Calls from a Custom GPT use that ChatGPT session, model context and usage limits.
+- Calls from Claude use that Claude conversation, connector/tool-call flow and usage limits.
+- Server Commander only provides the external tool/API surface and executes approved server-side actions.
+
+The goal is feature parity across clients, not separate behavior per assistant. When a capability is added, it should normally be exposed to ChatGPT through REST/OpenAPI and to Claude through MCP with matching safety rules. See [ROADMAP.md](./ROADMAP.md).
 
 ## Work in Progress
 
