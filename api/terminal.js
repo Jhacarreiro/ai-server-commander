@@ -84,7 +84,7 @@ function terminalHandler(req, res) {
         return;
     }
 
-    const command = req.query.command;
+    const command = req.query.command || req.body?.command;
     if (!command) {
         return res.status(400).json({message: 'Command parameter is required.'});
     }
