@@ -1,8 +1,8 @@
-# Roadmap — Cross-client Server Commander
+# Roadmap — AI Server Commander
 
 ## Product direction
 
-Server Commander should expose the same operational capabilities to every supported assistant client with as little feature drift as possible.
+AI Server Commander should expose the same operational capabilities to every supported assistant client with as little feature drift as possible.
 
 Supported client surfaces:
 

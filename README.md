@@ -1,4 +1,4 @@
-# ChatGPT Server Commander
+# AI Server Commander
 <img src="https://raw.githubusercontent.com/wonderwhy-er/ChatGPTServerCommander/main/logo4.png" width="350pxp" height="350px"/>
 This project is a server that exposes terminal commands and file editing functionality to assistant clients. It started as an API for ChatGPT Actions and now also exposes a remote MCP endpoint for Claude and other MCP-capable clients. In essence, it allows an approved assistant session to control any machine where you install this. Install, run, and edit anything, even itself.
 
@@ -15,11 +15,11 @@ This project is a server that exposes terminal commands and file editing functio
 
 ## Assistant clients and usage model
 
-Server Commander is a bridge between an assistant chat product and a machine you control. When used from ChatGPT or Claude, the model work happens in that chat session and uses that product's normal chat context, tool-call flow and plan limits. You do not need separate OpenAI API, Anthropic API, Codex or Claude Code credits just to use these server tools from the chat UI.
+AI Server Commander is a bridge between an assistant chat product and a machine you control. When used from ChatGPT or Claude, the model work happens in that chat session and uses that product's normal chat context, tool-call flow and plan limits. You do not need separate OpenAI API, Anthropic API, Codex or Claude Code credits just to use these server tools from the chat UI.
 
 - Calls from a Custom GPT use the active ChatGPT session and its available usage for that plan.
 - Calls from Claude use the active Claude conversation and its available connector/tool usage for that plan.
-- Server Commander provides the external tool/API surface and executes approved server-side actions on your machine.
+- AI Server Commander provides the external tool/API surface and executes approved server-side actions on your machine.
 - Any third-party APIs or paid services that your commands call remain your responsibility.
 
 The goal is feature parity across clients, not separate behavior per assistant. When a capability is added, it should normally be exposed to ChatGPT through REST/OpenAPI and to Claude through MCP with matching safety rules. See [ROADMAP.md](./ROADMAP.md).
