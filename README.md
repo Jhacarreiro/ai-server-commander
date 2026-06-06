@@ -13,13 +13,14 @@ This project is a server that exposes terminal commands and file editing functio
 - Interface with external APIs and services.
 - Local Tunnel / public HTTPS deployment support for making the server reachable by assistant clients.
 
-## Assistant clients and usage limits
+## Assistant clients and usage model
 
-Server Commander does not provide model access and does not bypass usage limits. The assistant that calls it still runs inside its own product, account and plan limits.
+Server Commander is a bridge between an assistant chat product and a machine you control. When used from ChatGPT or Claude, the model work happens in that chat session and uses that product's normal chat context, tool-call flow and plan limits. You do not need separate OpenAI API, Anthropic API, Codex or Claude Code credits just to use these server tools from the chat UI.
 
-- Calls from a Custom GPT use that ChatGPT session, model context and usage limits.
-- Calls from Claude use that Claude conversation, connector/tool-call flow and usage limits.
-- Server Commander only provides the external tool/API surface and executes approved server-side actions.
+- Calls from a Custom GPT use the active ChatGPT session and its available usage for that plan.
+- Calls from Claude use the active Claude conversation and its available connector/tool usage for that plan.
+- Server Commander provides the external tool/API surface and executes approved server-side actions on your machine.
+- Any third-party APIs or paid services that your commands call remain your responsibility.
 
 The goal is feature parity across clients, not separate behavior per assistant. When a capability is added, it should normally be exposed to ChatGPT through REST/OpenAPI and to Claude through MCP with matching safety rules. See [ROADMAP.md](./ROADMAP.md).
 
