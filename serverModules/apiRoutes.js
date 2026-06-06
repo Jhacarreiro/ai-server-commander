@@ -2,6 +2,7 @@ const {terminalHandler, interruptHandler} = require('../api/terminal');
 const {createNoticeHandler, pendingNoticesHandler, ackNoticeHandler} = require('../api/notices');
 const {activityHandler, activityStatusHandler, activityIndexHandler, activityContextHandler} = require('../api/activityLog');
 const createMcpHandler = require('../api/mcp');
+const { addOAuthRoutes } = require('../api/oauth');
 
 //const createAppHandlerWithUrl = require('../api/firebase'); // Modify import to pass getURL function
 const exitApplicationHandler = require('../api/exitApplicationHandler');
@@ -9,6 +10,7 @@ const {initDB} = require("./firebaseDB");
 
 module.exports = {
     addApi: (app, config, getURL, close) => {
+        addOAuthRoutes(app, config);
         const mcpHandler = createMcpHandler(config);
         app.all('/mcp', mcpHandler);
         // Logging middleware to log request and response details
