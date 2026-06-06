@@ -13,7 +13,7 @@ This project is a server that exposes terminal commands and file editing functio
 
 ## Work in Progress
 
-- Auto-generation of API schema with Swagger is in progress. For a detailed to-do list, please refer to [todo.md](./todo.md).
+- Auto-generation of API schema with Swagger is in progress. For the cross-client roadmap, see [ROADMAP.md](./ROADMAP.md). The legacy task list remains in [todo.md](./todo.md).
 
 ## Requirements/Installation
 
