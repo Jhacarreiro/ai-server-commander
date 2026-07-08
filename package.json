@@ -7,7 +7,12 @@
     "start": "node main.js",
     "debug": "node --inspect-brk main.js",
     "dev": "pm2 start main.js --name 'servercommander'",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:all",
+    "test:routes": "node test/routes-smoke.js",
+    "test:openapi": "node test/openapi-smoke.js",
+    "test:executor": "node test/executor-smoke.js",
+    "test:all": "npm run test:executor && npm run test:routes && npm run test:openapi",
+    "check": "node --check main.js && node --check api/terminal.js && node --check serverModules/apiRoutes.js && node --check serverModules/swaggerSetup.js"
   },
   "keywords": [],
   "author": "",

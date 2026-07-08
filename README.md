@@ -197,3 +197,78 @@ both                     -> visible only when both match
 ```
 
 This is useful when several ChatGPT conversations use the same Server Commander at the same time.
+
+## Command execution modes (v1.0.4+)
+
+### GET inline (existing action — fully compatible)
+
+```http
+GET /api/runTerminalScript?command=pwd%20%26%26%20hostname
+```
+
+### POST inline
+
+```http
+POST /api/runTerminalScript
+Content-Type: application/json
+
+{
+  "command": "pwd && hostname",
+  "mode": "inline",
+  "cwd": "/data/workspace",
+  "timeoutMs": 45000,
+  "maxOutputChars": 12000
+}
+```
+
+### POST script mode
+
+Use script mode for multi-line commands, nested docker exec, JSON/YAML edits, or anything where shell quoting is fragile.
+
+```http
+POST /api/runTerminalScript
+Content-Type: application/json
+
+{
+  "mode": "script",
+  "script": "set -e\npwd\nhostname\n",
+  "shell": "/bin/sh",
+  "cwd": "/data/workspace",
+  "timeoutMs": 45000,
+  "maxOutputChars": 12000
+}
+```
+
+The `/v1/commands/execute` endpoint accepts the same POST body.
+
+### Response contract
+
+```json
+{
+  "message": "Command executed successfully.",
+  "output": "...",
+  "exitCode": 0,
+  "timedOut": false,
+  "outputTruncated": false,
+  "maxOutputChars": 12000,
+  "mode": "inline",
+  "notices": []
+}
+```
+
+### When to use script mode
+
+- Multi-line commands with control flow (`if`, `for`, `while`)
+- Commands with nested quotes (`docker exec`, `awk`, `jq`, `sed`)
+- JSON or YAML inline edits
+- Any command that fails due to shell quoting in inline mode
+
+### Safety notes
+
+- Timeout is enforced; `COMMAND_TIMEOUT_MS` (default 120s) caps all executions
+- Output is truncated at `MAX_OUTPUT_CHARS` (default 12000 chars)
+- Script bodies are capped at `MAX_SCRIPT_BODY_BYTES` (default 512 KiB)
+- CWD is validated and must exist as a directory
+- Script temp files are cleaned up after execution
+- Activity logs record hash/byte-length/preview — never full script bodies
+- Destructive commands require explicit human approval

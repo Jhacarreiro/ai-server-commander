@@ -4,7 +4,6 @@ const {activityHandler, activityStatusHandler, activityIndexHandler, activityCon
 const createMcpHandler = require('../api/mcp');
 const { addOAuthRoutes } = require('../api/oauth');
 
-//const createAppHandlerWithUrl = require('../api/firebase'); // Modify import to pass getURL function
 const exitApplicationHandler = require('../api/exitApplicationHandler');
 const {initDB} = require("./firebaseDB");
 
@@ -13,16 +12,29 @@ module.exports = {
         addOAuthRoutes(app, config);
         const mcpHandler = createMcpHandler(config);
         app.all('/mcp', mcpHandler);
-        // Logging middleware to log request and response details
         app.use((req, res, next) => {
             const originalSend = res.send;
-            console.log(`Request to ${req.path}:`);
-            console.log('Query Params:', req.query);
-            console.log('Body:', req.body);
+            const queryKeys = req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
+            const bodyKeys = req.body && typeof req.body === 'object' ? Object.keys(req.body) : [];
+
+            console.log('Request:', {
+                method: req.method,
+                path: req.path,
+                queryKeys,
+                bodyKeys
+            });
 
             res.send = function(data) {
-                console.log(`Response from ${req.path}:`);
-                console.log('Response:', data);
+                const responseSize = Buffer.isBuffer(data)
+                    ? data.length
+                    : Buffer.byteLength(typeof data === 'string' ? data : JSON.stringify(data ?? null));
+                console.log('Response:', {
+                    method: req.method,
+                    path: req.path,
+                    statusCode: res.statusCode,
+                    type: Buffer.isBuffer(data) ? 'buffer' : typeof data,
+                    bytes: responseSize
+                });
                 originalSend.call(this, data);
             };
 
@@ -31,10 +43,7 @@ module.exports = {
         const readEditTextFileHandler = require('../api/readEditTextFile2Handler')(getURL);
         app.get('/api/runTerminalScript', terminalHandler);
         app.post('/api/runTerminalScript', terminalHandler);
-        /*const createAppHandler = createAppHandlerWithUrl(getURL);
-        app.route('/api/apps')
-              .post(createAppHandler)
-              .get(createAppHandler); // Add support for GET requests*/
+        app.post('/v1/commands/execute', terminalHandler);
         app.get('/api/server-url', require('../api/getServerUrlHandler')(getURL));
         app.get('/api/logs', require('../api/getLogsHandler'));
         app.get('/api/activity', activityHandler);
@@ -48,6 +57,5 @@ module.exports = {
         app.post("/api/interrupt", interruptHandler);
         app.post('/api/read-or-edit-file', readEditTextFileHandler);
         app.get('/api/read-or-edit-file', readEditTextFileHandler);
-        // Add new routes for Firebase applications
     }
 };
