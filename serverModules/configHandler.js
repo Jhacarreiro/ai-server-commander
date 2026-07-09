@@ -55,6 +55,7 @@ if (fs.existsSync(configFilePath)) {
             port: answers.port,
             useLocalTunnel: answers.useLocalTunnel,
             localTunnelSubdomain: answers.useLocalTunnel ? answers.localTunnelSubdomain : null,
+            productionDomain: answers.useLocalTunnel ? null : answers.productionDomain,
             authToken: authToken
         };
 
