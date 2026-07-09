@@ -1,212 +1,158 @@
 # AI Server Commander
-This project is a server that exposes terminal commands and file editing functionality to assistant clients. It started as an API for ChatGPT Actions and now also exposes a remote MCP endpoint for Claude and other MCP-capable clients. In essence, it allows an approved assistant session to control any machine where you install this. Install, run, and edit anything, even itself.
 
-## Features
+AI Server Commander is a self-hosted bridge that lets approved assistant clients run terminal commands and use server-side tools on a machine you control.
 
-- Execute server commands through a REST API that is compatible with Custom ChatGPT actions.
-- Execute server commands through a remote MCP endpoint compatible with Claude connectors and other MCP clients.
-- Reuse the same server-side capabilities across ChatGPT and Claude wherever possible, with REST/OpenAPI and MCP acting as adapters over shared behavior.
-- Interface with external APIs and services.
-- Local Tunnel / public HTTPS deployment support for making the server reachable by assistant clients.
+It started as a Custom GPT Actions server and now also exposes a remote MCP endpoint for Claude and other MCP-capable clients. The goal is one controlled server-side capability layer with multiple client adapters: REST/OpenAPI for ChatGPT Actions and MCP/OAuth for Claude.
 
-## Assistant clients and usage model
+## What it can do
 
-AI Server Commander is a bridge between an assistant chat product and a machine you control. When used from ChatGPT or Claude, the model work happens in that chat session and uses that product's normal chat context, tool-call flow and plan limits. You do not need separate OpenAI API, Anthropic API, Codex or Claude Code credits just to use these server tools from the chat UI.
+- Run terminal commands through a REST API for Custom GPT Actions.
+- Run terminal commands through a remote MCP endpoint for Claude and other MCP clients.
+- Preserve a compatible legacy GET action while adding safer POST execution modes.
+- Execute single-line commands or multi-line script envelopes with bounded timeouts and output limits.
+- Return structured command results: output, exit code, timeout state, truncation metadata and notices.
+- Expose a generated OpenAPI schema at `/openapi.json`.
+- Keep lightweight activity metadata without storing full script bodies.
+- Support local tunnel / public HTTPS deployments so assistant clients can reach the server.
 
-- Calls from a Custom GPT use the active ChatGPT session and its available usage for that plan.
-- Calls from Claude use the active Claude conversation and its available connector/tool usage for that plan.
-- AI Server Commander provides the external tool/API surface and executes approved server-side actions on your machine.
-- Any third-party APIs or paid services that your commands call remain your responsibility.
+## Latest updates
 
-The goal is feature parity across clients, not separate behavior per assistant. When a capability is added, it should normally be exposed to ChatGPT through REST/OpenAPI and to Claude through MCP with matching safety rules. See [ROADMAP.md](./ROADMAP.md).
+The current `main` includes command execution hardening:
 
-## Work in Progress
+- `POST /api/runTerminalScript` for JSON command execution requests.
+- `POST /v1/commands/execute` as a versioned command execution endpoint.
+- `mode: "script"` for multi-line commands and fragile shell quoting cases.
+- Smoke tests for executor behavior, routes and OpenAPI schema.
+- README, ROADMAP and CHANGELOG updates for the renamed AI Server Commander project.
 
-- Auto-generation of API schema with Swagger is in progress. For the cross-client roadmap, see [ROADMAP.md](./ROADMAP.md). The legacy task list remains in [todo.md](./todo.md).
-- Public release notes are kept in [CHANGELOG.md](./CHANGELOG.md). User-visible changes should be added there before tagging a release.
+See [CHANGELOG.md](./CHANGELOG.md) for release notes and [ROADMAP.md](./ROADMAP.md) for planned milestones.
 
-## Requirements/Installation
+## Client model
 
-- Node.js v18+
+AI Server Commander does not provide model credits or model hosting. The assistant work happens in the client you connect:
 
-To install the project dependencies, run:
+- ChatGPT calls the REST/OpenAPI endpoints from a Custom GPT Action.
+- Claude calls the MCP endpoint from a connector / MCP-capable client.
+- The server receives approved tool calls and executes them on your machine.
+- Third-party APIs, paid services or commands invoked by your scripts remain your responsibility.
+
+When a capability is added, it should normally be exposed with matching safety rules across REST/OpenAPI and MCP.
+
+## Requirements
+
+- Node.js 18 or newer.
+- A machine that can run the Node server.
+- A reachable HTTPS URL for ChatGPT or remote MCP clients. Local-only testing can use `localhost`; production use normally needs a reverse proxy, tunnel or public server URL.
+
+## Install and run
+
+Clone the repository and install dependencies:
 
 ```bash
+git clone https://github.com/Jhacarreiro/ai-server-commander.git
+cd ai-server-commander
 npm install
 ```
 
-# Setup Instructions
-
-### 1.  First you will need to install Node.js, at time of writting its v20.16.0 https://nodejs.org/en
-### 2.  Checkout the code and open Terminal in the folder
-### 3.  install dependencies
-
-```bash
-npm install
-```
-
-### 4. Start the server with:
+Start the server:
 
 ```bash
 npm run start
 ```
-### 5. On the first run, the setup process will guide you through configuring the port, determining whether it runs locally or on a server, and setting the domain.
-### 6. The setup will generate a secret key for use in CustomGPT called authKey, don't share it, it will be used later to allow ChatGPT to call your server or computer
 
-![image](https://github.com/user-attachments/assets/03570d60-3eea-4157-bb5f-785f05fe0ce7)
+On first run, the interactive setup asks for:
 
-### 7. Finally, create a CustomGPT here https://chatgpt.com/gpts/editor
-### 8. Add prompt to custom gpt from [prompt.md](./prompt.md)
+- the port to listen on;
+- whether to use LocalTunnel;
+- the public server URL when not using LocalTunnel.
 
-![image](https://github.com/user-attachments/assets/666f50ef-e264-4cd3-ab8a-6d1554b089c1)
+It writes a local `config.json` with an `authToken`. Treat that token as a secret. Do not commit it.
 
-### 9. Add your URL to the generated OpenAPI spec, similar to this but with your domain: `https://appcookbook.wonderwhy-er.com/openapi.json`
-
-![image](https://github.com/user-attachments/assets/901a7f31-22b7-42bf-b698-db346a8cb8f1)
-
-### 10. Add API authentication, choose Bearer an add authKey from step 6   
-
-![image](https://github.com/user-attachments/assets/2b41d095-c329-417c-a18e-d83f0a979afb)
-
-For more detailed instructions, please refer to the setup video (TODO: Add video).
-
-## Contributing
-
-Contributions to the Server Commander project are welcome.
-I did not put in work yet to make it easy to contribute but I will if I see interest in that.
-
-Feel free to reach out to me on 
-
-LinkedIn https://www.linkedin.com/in/eduardruzga/
-
-Or Discord https://discord.com/channels/wonderwhyer
-
-Or Twitter/X https://x.com/wonderwhy_er
-
-## License
-
-The project is licensed under the MIT License.
-
-## Pending notices
-
-Other local tools can leave short notices for the ChatGPT action to see on the next terminal response. Notices are kept in memory and are returned with terminal command responses until they are acknowledged or expire.
-
-Create a notice:
-
-```http
-POST /api/notices
-Content-Type: application/json
-
-{
-  "level": "warning",
-  "source": "local-supervisor",
-  "text": "Check that you are editing the live config file, not a generated copy.",
-  "ttlSeconds": 1800
-}
-```
-
-Run a terminal command as usual. If any notices are pending, the response includes them:
+A minimal local-style config looks like this:
 
 ```json
 {
-  "message": "Command executed successfully.",
-  "output": "...",
-  "notices": [
-    {
-      "id": "notice_...",
-      "level": "warning",
-      "source": "local-supervisor",
-      "text": "Check that you are editing the live config file, not a generated copy.",
-      "createdAt": "2026-05-26T12:00:00.000Z",
-      "expiresAt": "2026-05-26T12:30:00.000Z",
-      "deliveredAt": "2026-05-26T12:00:05.000Z",
-      "deliveredCount": 1
-    }
-  ]
+  "port": 3000,
+  "useLocalTunnel": false,
+  "productionDomain": "https://your-server.example.com",
+  "authToken": "replace-with-a-random-secret"
 }
 ```
 
-Acknowledge a notice so it stops appearing:
+Then start again with:
 
-```http
-POST /api/notices/{id}/ack
+```bash
+npm run start
 ```
 
-## Activity log
+Useful local checks:
 
-Server Commander can keep a small automatic activity log for command and notice lifecycle events. The log is local to the running server and is exposed through:
-
-```http
-GET /api/activity?limit=50
-GET /api/activity/status
+```bash
+npm run check
+npm test
 ```
 
-The log records events such as:
+## Use with ChatGPT Actions
+
+1. Start AI Server Commander and make it reachable over HTTPS.
+2. Open your Custom GPT builder.
+3. Add the instructions from [prompt.md](./prompt.md) or adapt them for your GPT.
+4. Import the OpenAPI schema from your server:
 
 ```text
-command_started
-command_finished
-notice_created
-notices_listed
-notice_acked
+https://your-server.example.com/openapi.json
 ```
 
-`command_finished` events include metadata and a redacted/truncated output preview:
+5. Configure Action authentication as Bearer token auth.
+6. Use the `authToken` from `config.json` as the Bearer token.
 
-```json
-{
-  "type": "command_finished",
-  "exitCode": 0,
-  "timedOut": false,
-  "durationMs": 137,
-  "outputLength": 5134,
-  "outputTruncated": true,
-  "outputPreview": "short redacted preview of stdout/stderr"
-}
-```
-
-This is intended as lightweight operational visibility for integrations. It does not store full stdout/stderr.
-
-
-
-Activity logs can also be queried by scope:
-
-```http
-GET /api/activity?scope=global&limit=50
-GET /api/activity?scope=conversation&conversationId=...
-GET /api/activity?scope=task&taskId=...
-GET /api/activity/index
-POST /api/activity/context
-```
-
-`POST /api/activity/context` associates a conversation with a stable `taskId`/`taskTitle`, which helps integrations keep simultaneous work streams separate.
-
-
-## Scoped notices
-
-Notices support scoped delivery:
-
-```text
-no conversationId/taskId -> global notice, visible to any terminal response
-conversationId only      -> visible only to that conversation
-taskId only              -> visible only to that task
-both                     -> visible only when both match
-```
-
-This is useful when several ChatGPT conversations use the same Server Commander at the same time.
-
-## Command execution modes
-
-### GET inline (existing action — fully compatible)
+The legacy action endpoint remains available:
 
 ```http
 GET /api/runTerminalScript?command=pwd%20%26%26%20hostname
+Authorization: Bearer <authToken>
+```
+
+## Use with Claude / MCP
+
+AI Server Commander exposes a remote MCP endpoint:
+
+```text
+https://your-server.example.com/mcp
+```
+
+OAuth discovery endpoints are exposed automatically under:
+
+```text
+/.well-known/oauth-protected-resource/mcp
+/.well-known/oauth-authorization-server
+/oauth/register
+/oauth/authorize
+/oauth/token
+```
+
+MCP clients that support remote MCP + OAuth discovery can use the MCP endpoint directly. The main tool currently exposed over MCP is:
+
+```text
+run_terminal_command
+```
+
+For simple setups, the MCP endpoint also supports token-based access using the same server token where supported by the client.
+
+## Command execution API
+
+### GET inline, legacy-compatible
+
+```http
+GET /api/runTerminalScript?command=pwd%20%26%26%20hostname
+Authorization: Bearer <authToken>
 ```
 
 ### POST inline
 
 ```http
 POST /api/runTerminalScript
+Authorization: Bearer <authToken>
 Content-Type: application/json
 
 {
@@ -220,10 +166,11 @@ Content-Type: application/json
 
 ### POST script mode
 
-Use script mode for multi-line commands, nested docker exec, JSON/YAML edits, or anything where shell quoting is fragile.
+Use script mode for multi-line commands, nested quotes, JSON/YAML edits or commands that are fragile as a single URL/query string.
 
 ```http
 POST /api/runTerminalScript
+Authorization: Bearer <authToken>
 Content-Type: application/json
 
 {
@@ -236,9 +183,13 @@ Content-Type: application/json
 }
 ```
 
-The `/v1/commands/execute` endpoint accepts the same POST body.
+The versioned endpoint accepts the same POST body:
 
-### Response contract
+```http
+POST /v1/commands/execute
+```
+
+### Response shape
 
 ```json
 {
@@ -253,19 +204,62 @@ The `/v1/commands/execute` endpoint accepts the same POST body.
 }
 ```
 
-### When to use script mode
+## Activity log and notices
 
-- Multi-line commands with control flow (`if`, `for`, `while`)
-- Commands with nested quotes (`docker exec`, `awk`, `jq`, `sed`)
-- JSON or YAML inline edits
-- Any command that fails due to shell quoting in inline mode
+AI Server Commander can keep lightweight operational metadata for command and notice lifecycle events. It is designed for visibility, not full transcript storage.
 
-### Safety notes
+Activity endpoints:
 
-- Timeout is enforced; `COMMAND_TIMEOUT_MS` (default 120s) caps all executions
-- Output is truncated at `MAX_OUTPUT_CHARS` (default 12000 chars)
-- Script bodies are capped at `MAX_SCRIPT_BODY_BYTES` (default 512 KiB)
-- CWD is validated and must exist as a directory
-- Script temp files are cleaned up after execution
-- Activity logs record hash/byte-length/preview — never full script bodies
-- Destructive commands require explicit human approval
+```http
+GET /api/activity?limit=50
+GET /api/activity/status
+GET /api/activity?scope=global&limit=50
+GET /api/activity?scope=conversation&conversationId=...
+GET /api/activity?scope=task&taskId=...
+GET /api/activity/index
+POST /api/activity/context
+```
+
+Notice endpoints:
+
+```http
+POST /api/notices
+POST /api/notices/{id}/ack
+```
+
+Notice scoping rules:
+
+```text
+no conversationId/taskId -> global notice
+conversationId only      -> visible only to that conversation
+taskId only              -> visible only to that task
+both                     -> visible only when both match
+```
+
+## Safety notes
+
+- Keep `config.json` and `authToken` private.
+- Put the server behind HTTPS before connecting remote clients.
+- Use short, explicit commands when possible.
+- Prefer POST script mode when quoting becomes fragile.
+- Timeouts are enforced; `COMMAND_TIMEOUT_MS` caps command execution.
+- Output is truncated at `MAX_OUTPUT_CHARS`.
+- Script bodies are capped by `MAX_SCRIPT_BODY_BYTES`.
+- Script temp files are cleaned up after execution.
+- Activity logs record metadata such as hash, byte length and previews rather than full script bodies.
+- Destructive operations should require explicit human approval.
+
+## Project files
+
+- [CHANGELOG.md](./CHANGELOG.md) — release notes and latest user-visible changes.
+- [ROADMAP.md](./ROADMAP.md) — planned milestones and parity goals.
+- [prompt.md](./prompt.md) — starter Custom GPT instructions.
+- [todo.md](./todo.md) — legacy task list.
+
+## Contributing
+
+Contributions are welcome. Please keep changes generic and avoid committing secrets, personal deployment details, logs or local configuration.
+
+## License
+
+The project is licensed under the MIT License.
