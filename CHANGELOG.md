@@ -15,6 +15,8 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Fixed first-run setup so the configured public server URL is saved in `config.json`.
+- Aligned package metadata with the MIT license file.
 - Centralized terminal execution through a bounded executor that preserves exit code, timeout state, output truncation metadata and notices.
 - Expanded the public OpenAPI schema with command request/response objects for GET, POST and versioned command execution.
 - Updated README command execution examples and safety notes for script mode and bounded execution.
