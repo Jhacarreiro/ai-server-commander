@@ -1,9 +1,5 @@
 # AI Server Commander
-<img src="https://raw.githubusercontent.com/wonderwhy-er/ChatGPTServerCommander/main/logo4.png" width="350pxp" height="350px"/>
 This project is a server that exposes terminal commands and file editing functionality to assistant clients. It started as an API for ChatGPT Actions and now also exposes a remote MCP endpoint for Claude and other MCP-capable clients. In essence, it allows an approved assistant session to control any machine where you install this. Install, run, and edit anything, even itself.
-
-## Video Demo
-[![Watch here](https://img.youtube.com/vi/8wMOferdWeA/maxresdefault.jpg)]([https://youtu.be/VIDEO_ID](https://youtu.be/8wMOferdWeA?t=1333))
 
 ## Features
 
