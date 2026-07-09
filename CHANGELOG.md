@@ -6,6 +6,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [1.0.5] - 2026-07-09
+
 ### Added
 
 - Added bounded `POST /api/runTerminalScript` support for JSON command execution requests.
