@@ -100,7 +100,7 @@ REST parity:
 {
   "command": "docker ps",
   "dry_run": false,
-  "cwd": "/home/AIcenas"
+  "cwd": "/srv"
 }
 ```
 
@@ -110,7 +110,7 @@ MCP parity:
 {
   "command": "docker ps",
   "dry_run": false,
-  "cwd": "/home/AIcenas"
+  "cwd": "/srv"
 }
 ```
 
@@ -180,19 +180,19 @@ Add named policy profiles:
 ```yaml
 profiles:
   default:
-    cwd: /home/AIcenas
+    cwd: /srv
     allowed_paths:
-      - /home/AIcenas/ChatGPTServerCommander
+      - /opt/ai-server-commander
       - /tmp
     denied_paths:
-      - /data/.openclaw
-      - /home/*/.docker/openclaw/.env
-  openclaw_readonly:
-    cwd: /data/workspace/openclaw-wiki
+      - /path/to/protected/config
+      - /path/to/protected/.env
+  docs_readonly:
+    cwd: /srv/project/openclaw-wiki
     allowed_paths:
-      - /data/workspace/openclaw-wiki
+      - /srv/project/openclaw-wiki
     denied_paths:
-      - /data/.openclaw
+      - /path/to/protected/config
 ```
 
 Desired behavior:
@@ -226,7 +226,7 @@ Example:
 
 ```json
 {
-  "command": "docker restart openclaw",
+  "command": "systemctl restart example-service",
   "risk": "service_restart",
   "requires_confirmation": true,
   "confirmation_hint": "Ask the human to confirm this exact command."

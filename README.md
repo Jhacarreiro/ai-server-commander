@@ -27,6 +27,7 @@ The goal is feature parity across clients, not separate behavior per assistant. 
 ## Work in Progress
 
 - Auto-generation of API schema with Swagger is in progress. For the cross-client roadmap, see [ROADMAP.md](./ROADMAP.md). The legacy task list remains in [todo.md](./todo.md).
+- Public release notes are kept in [CHANGELOG.md](./CHANGELOG.md). User-visible changes should be added there before tagging a release.
 
 ## Requirements/Installation
 
@@ -198,7 +199,7 @@ both                     -> visible only when both match
 
 This is useful when several ChatGPT conversations use the same Server Commander at the same time.
 
-## Command execution modes (v1.0.4+)
+## Command execution modes
 
 ### GET inline (existing action — fully compatible)
 
@@ -215,7 +216,7 @@ Content-Type: application/json
 {
   "command": "pwd && hostname",
   "mode": "inline",
-  "cwd": "/data/workspace",
+  "cwd": "/srv/project",
   "timeoutMs": 45000,
   "maxOutputChars": 12000
 }
@@ -233,7 +234,7 @@ Content-Type: application/json
   "mode": "script",
   "script": "set -e\npwd\nhostname\n",
   "shell": "/bin/sh",
-  "cwd": "/data/workspace",
+  "cwd": "/srv/project",
   "timeoutMs": 45000,
   "maxOutputChars": 12000
 }
