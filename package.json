@@ -1,6 +1,6 @@
 {
   "name": "servercommander",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -11,25 +11,25 @@
     "test:routes": "node test/routes-smoke.js",
     "test:openapi": "node test/openapi-smoke.js",
     "test:executor": "node test/executor-smoke.js",
-    "test:all": "npm run test:executor && npm run test:routes && npm run test:openapi",
-    "check": "node --check main.js && node --check api/terminal.js && node --check serverModules/apiRoutes.js && node --check serverModules/swaggerSetup.js"
+    "test:all": "npm run test:executor && npm run test:routes && npm run test:mcp && npm run test:openapi",
+    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js",
+    "test:mcp": "node test/mcp-smoke.js"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "diff": "^5.2.0",
-    "espree": "^10.0.1",
-    "express": "^4.19.2",
+    "diff": "^5.2.2",
+    "espree": "^10.4.0",
+    "express": "^4.22.2",
     "fastest-levenshtein": "^1.0.16",
-    "firebase-admin": "^12.3.1",
-    "inquirer": "^10.1.8",
+    "firebase-admin": "^12.7.0",
+    "inquirer": "^10.2.2",
+    "js-beautify": "^1.15.4",
     "localtunnel": "^2.0.2",
-    "marked": "^14.1.1",
-    "simple-git": "^3.24.0",
-    "socket.io": "^4.7.4",
-    "swagger-autogen": "^2.23.7",
-    "swagger-jsdoc": "^6.2.8",
-    "js-beautify": "^1.15.1"
+    "marked": "^14.1.4",
+    "simple-git": "^3.36.0",
+    "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.3.0"
   }
 }

@@ -10,12 +10,12 @@ const globalLogPath = path.join(activityRoot, 'global.jsonl');
 const globalStatusPath = path.join(activityRoot, 'status.json');
 const contextsPath = path.join(activityRoot, 'contexts.json');
 const MAX_TEXT = 500;
-const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]*\s*[=:]\s*[^\s'";]+)/gi;
+const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|\b[A-Za-z0-9_]{0,80}(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*[^\s'";]+)/gi;
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 function ensureRuntimeDir() { ensureDir(runtimeDir); ensureDir(activityRoot); ensureDir(path.join(activityRoot, 'conversations')); ensureDir(path.join(activityRoot, 'tasks')); }
 function redact(value) { return String(value || '').replace(SECRET_PATTERN, '[REDACTED]'); }
-function preview(value, max = MAX_TEXT) { const text = redact(value).replace(/\s+/g, ' ').trim(); return text.length > max ? text.slice(0, max) + '…' : text; }
+function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw; const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? text.slice(0, max) + '…' : text; }
 function hashText(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12); }
 function safeId(value, fallback = 'unknown') { const raw = String(value || '').trim() || fallback; const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback; return safe.length < raw.length || safe !== raw ? `${safe}_${hashText(raw)}`.slice(0, 96) : safe; }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }

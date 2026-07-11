@@ -11,16 +11,24 @@ const {initDB} = require("./firebaseDB");
 const {viewAppHandler, editAppHandler} = require("../api/firebaseAppHandlers");
 const fs = require('fs');
 const marked = require('marked');
+const { MAX_SCRIPT_BODY_BYTES } = require('./commandExecutor');
 
 module.exports = async () => {
     log('start');
     initDB();
     const config = await configPromise;
-    log('got config', config);
+    log('got config', {
+        port: config.port,
+        useLocalTunnel: config.useLocalTunnel,
+        productionDomain: config.productionDomain,
+        localTunnelSubdomain: config.localTunnelSubdomain,
+        hasAuthToken: Boolean(config.authToken),
+        hasMcpToken: Boolean(config.mcpToken)
+    });
     const expressApp = express();
     const server = http.createServer(expressApp);
-    expressApp.use(express.json());
-    expressApp.use(express.urlencoded({ extended: false }));
+    expressApp.use(express.json({ limit: MAX_SCRIPT_BODY_BYTES }));
+    expressApp.use(express.urlencoded({ extended: false, limit: MAX_SCRIPT_BODY_BYTES }));
 
     log('serving static from', path.join(__dirname, '..', 'public'));
     expressApp.use(express.static(path.join(__dirname, '..', 'public')));
@@ -53,8 +61,11 @@ const htmlContent = marked.parse(data);
     addApi(expressApp, config, () => serverUrl, () => activeTunnel && activeTunnel.close());
 
     expressApp.use((err, req, res, next) => {
-        console.error(err.stack); // Log error stack trace to server console
-        res.status(500).send({ error: err.message, stack: err.stack });
+        if (res.headersSent) return next(err);
+        console.error(err.stack || err.message);
+        const status = err.type === 'entity.too.large' ? 413 : (err.status || 500);
+        const message = status === 413 ? 'Request body too large.' : 'Internal server error.';
+        return res.status(status).json({ error: message });
     });
 
     server.listen(config.port, () => {

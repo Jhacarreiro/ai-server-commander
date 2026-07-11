@@ -1,12 +1,13 @@
 // Swagger/OpenAPI Documentation Setup
 const swaggerJsdoc = require('swagger-jsdoc');
+const packageVersion = require('../package.json').version;
 
 const options = {
     definition: {
         openapi: '3.1.0',
         info: {
             title: 'AI Server Commander',
-            version: '1.0.4',
+            version: packageVersion,
         },
         components: {
             schemas: {
@@ -37,9 +38,11 @@ const options = {
                     type: 'object',
                     properties: {
                         message: { type: 'string' },
+                        activityId: { type: 'string' },
                         output: { type: 'string' },
                         exitCode: { type: ['integer', 'null'] },
                         timedOut: { type: 'boolean' },
+                        interrupted: { type: 'boolean' },
                         outputTruncated: { type: 'boolean' },
                         maxOutputChars: { type: 'integer' },
                         mode: { type: 'string', enum: ['inline', 'script'] },
@@ -90,19 +93,19 @@ openapiSpecification.paths = {
                 { name: 'timeoutMs', in: 'query', required: false, schema: { type: 'integer' } },
                 { name: 'maxOutputChars', in: 'query', required: false, schema: { type: 'integer' } }
             ],
-            responses: { '200': commandResponse }
+            responses: { '200': commandResponse, '400': { description: 'Invalid request' }, '413': { description: 'Request body too large' } }
         },
         post: {
             summary: 'Execute an inline command or script envelope',
             requestBody: commandRequestBody,
-            responses: { '200': commandResponse, '400': { description: 'Invalid request' } }
+            responses: { '200': commandResponse, '400': { description: 'Invalid request' }, '413': { description: 'Request body too large' } }
         }
     },
     '/v1/commands/execute': {
         post: {
             summary: 'Execute an inline command or script envelope',
             requestBody: commandRequestBody,
-            responses: { '200': commandResponse, '400': { description: 'Invalid request' } }
+            responses: { '200': commandResponse, '400': { description: 'Invalid request' }, '413': { description: 'Request body too large' } }
         }
     }
 };
