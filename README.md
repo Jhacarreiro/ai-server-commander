@@ -21,9 +21,10 @@ The current `main` includes command execution hardening:
 
 - `POST /api/runTerminalScript` for JSON command execution requests.
 - `POST /v1/commands/execute` as a versioned command execution endpoint.
-- `mode: "script"` for multi-line commands and fragile shell quoting cases.
-- Smoke tests for executor behavior, routes and OpenAPI schema.
-- README, ROADMAP and CHANGELOG updates for the renamed AI Server Commander project.
+- Shared bounded execution policies across REST and MCP, including `SAFE_MODE`, activity logs and notices.
+- `mode: "script"` for multi-line commands through both REST and Claude/MCP.
+- Per-command activity IDs and safe interruption of concurrent executions.
+- Smoke tests for executor behavior, REST routes, MCP and OpenAPI schema.
 
 See [CHANGELOG.md](./CHANGELOG.md) for release notes and [ROADMAP.md](./ROADMAP.md) for planned milestones.
 
@@ -139,6 +140,8 @@ run_terminal_command
 
 For simple setups, the MCP endpoint also supports token-based access using the same server token where supported by the client.
 
+The MCP tool accepts the existing `command` argument for inline execution. It also accepts optional `mode`, `script`, `cwd`, `shell`, `timeoutMs` and `maxOutputChars` fields. MCP and REST use the same server-side limits, `SAFE_MODE` policy, activity logging and notices.
+
 ## Command execution API
 
 ### GET inline, legacy-compatible
@@ -194,9 +197,12 @@ POST /v1/commands/execute
 ```json
 {
   "message": "Command executed successfully.",
+  "activityId": "cmd_...",
   "output": "...",
   "exitCode": 0,
   "timedOut": false,
+  "interrupted": false,
+  "blocked": false,
   "outputTruncated": false,
   "maxOutputChars": 12000,
   "mode": "inline",
@@ -243,6 +249,9 @@ both                     -> visible only when both match
 - Use short, explicit commands when possible.
 - Prefer POST script mode when quoting becomes fragile.
 - Timeouts are enforced; `COMMAND_TIMEOUT_MS` caps command execution.
+- Timeout and interruption terminate the spawned process group on POSIX hosts.
+- Concurrent commands receive separate `activityId` values; send one to `POST /api/interrupt` to target a specific execution.
+- Supplied working directories must exist; invalid paths are rejected rather than silently replaced.
 - Output is truncated at `MAX_OUTPUT_CHARS`.
 - Script bodies are capped by `MAX_SCRIPT_BODY_BYTES`.
 - Script temp files are cleaned up after execution.

@@ -84,6 +84,9 @@ function assert(condition, label, details = '') {
     let r = await request('GET', '/api/runTerminalScript?command=printf%20hello_get');
     assert(r.status === 200 && r.body.output === 'hello_get' && r.body.exitCode === 0, 'GET legacy command');
 
+    r = await request('GET', '/api/runTerminalScript?command=pwd&cwd=%2Ftmp&timeoutMs=5000&maxOutputChars=99');
+    assert(r.status === 200 && r.body.output === '/tmp' && r.body.maxOutputChars === 99, 'GET options are honored', JSON.stringify(r.body));
+
     r = await request('POST', '/api/runTerminalScript', { mode: 'inline', command: 'printf hello_post', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.output === 'hello_post' && r.body.mode === 'inline', 'POST inline command');
 
@@ -92,6 +95,13 @@ function assert(condition, label, details = '') {
 
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'exit 42', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.exitCode === 42, 'exit code preserved', JSON.stringify(r.body));
+
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'pwd', cwd: '/definitely/missing' });
+    assert(r.status === 400, 'invalid cwd is rejected', JSON.stringify(r.body));
+
+    const largeScript = 'printf body_limit_ok\n#' + 'x'.repeat(150000);
+    r = await request('POST', '/v1/commands/execute', { mode: 'script', script: largeScript, shell: '/bin/sh', timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.output === 'body_limit_ok', 'JSON body limit accepts allowed scripts', JSON.stringify(r.body));
 
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'sleep 3', timeoutMs: 500 });
     assert(r.status === 200 && r.body.timedOut === true, 'timeout returns timedOut true', JSON.stringify(r.body));

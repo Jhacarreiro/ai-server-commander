@@ -1,35 +1,20 @@
-const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { getPendingNotices } = require('./notices');
 const { appendActivity, preview, hashText, getActivityContext } = require('./activityLog');
-
-const MAX_OUTPUT_CHARS = parseInt(process.env.MAX_OUTPUT_CHARS || '12000', 10);
-const COMMAND_TIMEOUT_MS = parseInt(process.env.COMMAND_TIMEOUT_MS || '120000', 10);
-const MAX_SCRIPT_BODY_BYTES = parseInt(process.env.MAX_SCRIPT_BODY_BYTES || '524288', 10);
-const MAX_CWD_BYTES = 1024;
-const MAX_SHELL_BYTES = 256;
-const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
-
-const blockedCommandPatterns = [
-    /rm\s+-rf\s+\/(?:\s|$)/i,
-    /\bmkfs(?:\.|\s|$)/i,
-    /\bdd\s+if=/i,
-    /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/,
-    /\bshutdown\b/i,
-    /\breboot\b/i,
-    /\bpoweroff\b/i,
-    /\bhalt\b/i,
-    /\bpasswd\b/i,
-    /\buserdel\b/i,
-    /\bgroupdel\b/i,
-    /chmod\s+-R\s+777\s+\//i,
-    /chown\s+-R\b/i
-];
-
-let currentChild = null;
-let currentChildCwd = null;
+const {
+    COMMAND_TIMEOUT_MS,
+    MAX_OUTPUT_CHARS,
+    MAX_SCRIPT_BODY_BYTES,
+    MAX_SHELL_BYTES,
+    SAFE_MODE,
+    executeBounded,
+    findBlockedPattern,
+    interruptCommand,
+    positiveInteger,
+    resolveCwd
+} = require('../serverModules/commandExecutor');
 
 function setCors(res) {
     res.setHeader('Access-Control-Allow-Origin', 'https://chat.openai.com');
@@ -38,144 +23,58 @@ function setCors(res) {
     res.setHeader('Access-Control-Allow-Credentials', true);
 }
 
-function findBlockedPattern(command) {
-    if (!SAFE_MODE) return null;
-    return blockedCommandPatterns.find((pattern) => pattern.test(command)) || null;
-}
-
-// ── Bounded executor ──────────────────────────────────────────────────────────
-
-function executeBounded(options) {
-    const {
-        command,
-        shell = process.env.SHELL || '/bin/bash',
-        cwd = process.env.HOME || process.cwd(),
-        timeoutMs = COMMAND_TIMEOUT_MS,
-        maxOutputChars = MAX_OUTPUT_CHARS
-    } = options;
-
-    const effectiveTimeout = Math.min(timeoutMs, COMMAND_TIMEOUT_MS);
-    const effectiveMaxOutput = Math.min(maxOutputChars, MAX_OUTPUT_CHARS);
-
-    return new Promise((resolve) => {
-        let finished = false;
-        currentChild = exec(command, {
-            shell,
-            cwd,
-            timeout: effectiveTimeout,
-            maxBuffer: Math.max(effectiveMaxOutput * 4, 1024 * 1024)
-        }, (error, stdout, stderr) => {
-            if (finished) return;
-            finished = true;
-            currentChild = null;
-            currentChildCwd = null;
-
-            const output = [
-                stdout || '',
-                stderr ? '\n[stderr]\n' + stderr : '',
-                error ? '\n[error]\n' + error.message : ''
-            ].join('').trim();
-
-            const outputTruncated = output.length > effectiveMaxOutput;
-            const limitedOutput = outputTruncated ? output.slice(0, effectiveMaxOutput) : output;
-            const exitCode = error && typeof error.code !== 'undefined' ? error.code : 0;
-            const timedOut = Boolean(error && error.killed);
-
-            resolve({ output, limitedOutput, outputTruncated, exitCode, timedOut });
-        });
-
-        if (currentChild) {
-            currentChildCwd = cwd;
-        }
-    });
-}
-
-// ── CWD sanitization ──────────────────────────────────────────────────────────
-
-function sanitizeCwd(raw) {
-    if (!raw) return undefined;
-    if (typeof raw !== 'string') return undefined;
-    const trimmed = raw.trim();
-    if (!trimmed) return undefined;
-    if (trimmed.length > MAX_CWD_BYTES) return undefined;
-    if (/\x00/.test(trimmed)) return undefined;
-    try {
-        const resolved = path.resolve(trimmed);
-        if (!fs.existsSync(resolved)) return undefined;
-        if (!fs.statSync(resolved).isDirectory()) return undefined;
-        return resolved;
-    } catch {
-        return undefined;
-    }
-}
-
-// ── Request parsing ───────────────────────────────────────────────────────────
-
-function getCommand(req) {
-    return req.query.command || (req.body && req.body.command);
-}
-
 function parseRequest(req) {
     const query = req.query || {};
     const body = req.body || {};
+    const options = req.method === 'GET' ? query : body;
 
     let mode = 'inline';
-    if (req.method === 'GET') {
-        mode = 'inline';
-    } else if (body.mode === 'script') {
-        mode = 'script';
-    } else if (body.mode === 'inline' || !body.mode) {
-        mode = 'inline';
-    } else {
-        return { error: true, status: 400, message: 'Unknown mode: ' + body.mode + '. Supported: inline, script.' };
+    if (req.method !== 'GET') {
+        if (body.mode === 'script') mode = 'script';
+        else if (body.mode === 'inline' || !body.mode) mode = 'inline';
+        else return { error: true, status: 400, message: 'Unknown mode: ' + body.mode + '. Supported: inline, script.' };
     }
 
-    const command = getCommand(req);
+    const command = req.method === 'GET' ? query.command : (body.command || query.command);
     const script = body.script;
 
-    if (mode === 'inline' && !command) {
+    if (mode === 'inline' && (typeof command !== 'string' || !command.trim())) {
         return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
     }
-    if (mode === 'script' && !script) {
-        return { error: true, status: 400, message: 'Script body is required for script mode.' };
-    }
-    if (mode === 'script' && typeof script !== 'string') {
-        return { error: true, status: 400, message: 'Script body must be a string.' };
+    if (mode === 'script' && (typeof script !== 'string' || !script)) {
+        return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
     }
     if (mode === 'script' && Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BODY_BYTES) {
-        return { error: true, status: 400, message: 'Script body exceeds maximum of ' + MAX_SCRIPT_BODY_BYTES + ' bytes.' };
+        return { error: true, status: 413, message: 'Script body exceeds maximum of ' + MAX_SCRIPT_BODY_BYTES + ' bytes.' };
     }
 
     let shell = process.env.SHELL || '/bin/sh';
-    if (mode === 'script' && body.shell) {
-        if (typeof body.shell !== 'string' || Buffer.byteLength(body.shell, 'utf8') > MAX_SHELL_BYTES) {
+    if (mode === 'script' && options.shell) {
+        if (typeof options.shell !== 'string' || Buffer.byteLength(options.shell, 'utf8') > MAX_SHELL_BYTES) {
             return { error: true, status: 400, message: 'Shell path is invalid or too long.' };
         }
-        const candidate = body.shell.trim();
+        const candidate = options.shell.trim();
         if (!/^(\/[A-Za-z0-9._\-\/]+|[A-Za-z0-9._\-]{1,32})$/.test(candidate)) {
             return { error: true, status: 400, message: 'Shell path is not allowed.' };
         }
         shell = candidate;
     }
 
-    const cwd = sanitizeCwd(body.cwd) || process.env.HOME || process.cwd();
-    const timeoutMs = (Number.isFinite(Number(body.timeoutMs)) && Number(body.timeoutMs) > 0)
-        ? Number(body.timeoutMs) : COMMAND_TIMEOUT_MS;
-    const maxOutputChars = (Number.isFinite(Number(body.maxOutputChars)) && Number(body.maxOutputChars) > 0)
-        ? Number(body.maxOutputChars) : MAX_OUTPUT_CHARS;
+    const cwdResult = resolveCwd(options.cwd);
+    if (cwdResult.error) {
+        return { error: true, status: 400, message: cwdResult.error };
+    }
 
     return {
         mode,
         command: mode === 'script' ? null : command,
         script: mode === 'script' ? script : null,
-        cwd,
-        timeoutMs,
-        maxOutputChars,
+        cwd: cwdResult.cwd,
+        timeoutMs: positiveInteger(options.timeoutMs, COMMAND_TIMEOUT_MS),
+        maxOutputChars: positiveInteger(options.maxOutputChars, MAX_OUTPUT_CHARS),
         shell
     };
 }
-
-// ── Script file helpers ───────────────────────────────────────────────────────
 
 function createScriptFile(scriptBody) {
     const runtimeDir = path.join(__dirname, '..', 'runtime', 'scripts');
@@ -187,50 +86,35 @@ function createScriptFile(scriptBody) {
 
     const scriptPath = path.join(scriptDir, 'script.sh');
     fs.writeFileSync(scriptPath, scriptBody, { mode: 0o500, encoding: 'utf8' });
-
     return { scriptPath, scriptDir };
 }
 
 function cleanupScriptDir(scriptDir) {
     try {
-        if (scriptDir && fs.existsSync(scriptDir)) {
-            fs.rmSync(scriptDir, { recursive: true, force: true });
-        }
-    } catch (e) {
-        console.error('[terminal] script cleanup failed:', e.message);
+        if (scriptDir && fs.existsSync(scriptDir)) fs.rmSync(scriptDir, { recursive: true, force: true });
+    } catch (error) {
+        console.error('[terminal] script cleanup failed:', error.message);
     }
 }
 
-// ── Terminal handler ──────────────────────────────────────────────────────────
+function quoteShellArg(value) {
+    return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
 
-function terminalHandler(req, res) {
-    setCors(res);
-
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-
-    const parsed = parseRequest(req);
-    if (parsed.error) {
-        return res.status(parsed.status).json({ message: parsed.message });
-    }
-
+async function executeCommand(parsed, activityContext = getActivityContext(null), source = 'rest') {
     const { mode, command, script, cwd, timeoutMs, maxOutputChars, shell } = parsed;
-
-    const activityContext = getActivityContext(req);
     const activityId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const startedAtMs = Date.now();
-
     const payloadText = mode === 'script' ? script : command;
     const payloadHash = hashText(payloadText || '');
     const payloadByteLength = Buffer.byteLength(payloadText || '', 'utf8');
     const payloadPreview = preview(payloadText || '', 240);
-
     const blockedPattern = findBlockedPattern(payloadText || '');
 
     appendActivity({
         type: 'command_started',
         id: activityId,
+        source,
         mode,
         commandHash: payloadHash,
         commandPreview: payloadPreview,
@@ -245,10 +129,12 @@ function terminalHandler(req, res) {
         appendActivity({
             type: 'command_finished',
             id: activityId,
+            source,
             mode,
             commandHash: payloadHash,
             exitCode: 126,
             timedOut: false,
+            interrupted: false,
             blocked: true,
             matchedRule: String(blockedPattern),
             durationMs: Date.now() - startedAtMs,
@@ -261,181 +147,166 @@ function terminalHandler(req, res) {
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
-        return res.status(403).json({
-            message: 'Command blocked by SAFE_MODE policy.',
-            output: '',
-            exitCode: 126,
-            timedOut: false,
-            blocked: true,
-            notices
-        });
-    }
-
-    console.log('[terminal] execute mode=' + mode + ' cwd=' + cwd + ' timeoutMs=' + timeoutMs + ' maxOutputChars=' + maxOutputChars);
-    if (mode === 'inline') {
-        console.log('[terminal] command: ' + command);
-    } else {
-        console.log('[terminal] script: ' + payloadByteLength + ' bytes');
-    }
-
-    // ── Script mode ───────────────────────────────────────────────────────────
-
-    if (mode === 'script') {
-        let scriptDir = null;
-        try {
-            const s = createScriptFile(script);
-            scriptDir = s.scriptDir;
-
-            executeBounded({
-                command: shell + ' ' + s.scriptPath,
-                shell,
-                cwd,
-                timeoutMs,
-                maxOutputChars
-            }).then(({ output, limitedOutput, outputTruncated, exitCode, timedOut }) => {
-                cleanupScriptDir(scriptDir);
-                const notices = getPendingNotices(activityContext);
-
-                console.log('[terminal] script finished. exitCode=' + exitCode + ' timedOut=' + timedOut + ' output_length=' + output.length);
-
-                appendActivity({
-                    type: 'command_finished',
-                    id: activityId,
-                    mode,
-                    commandHash: payloadHash,
-                    commandPreview: payloadPreview,
-                    payloadByteLength,
-                    exitCode,
-                    timedOut,
-                    blocked: false,
-                    durationMs: Date.now() - startedAtMs,
-                    outputLength: output.length,
-                    outputTruncated,
-                    outputPreview: preview(output, 1200),
-                    noticesCount: notices.length,
-                    errorPreview: null,
-                    cwd,
-                    shell
-                }, activityContext);
-
-                return res.status(200).json({
-                    message: exitCode === 0 ? 'Script executed successfully.' : 'Script finished with error.',
-                    output: limitedOutput,
-                    exitCode,
-                    timedOut,
-                    outputTruncated,
-                    maxOutputChars,
-                    mode: 'script',
-                    notices
-                });
-            }).catch((err) => {
-                cleanupScriptDir(scriptDir);
-                console.error('[terminal] script execution error:', err.message);
-                return res.status(500).json({
-                    message: 'Script execution failed.',
-                    output: '',
-                    exitCode: 1,
-                    timedOut: false,
-                    outputTruncated: false,
-                    maxOutputChars,
-                    mode: 'script',
-                    notices: getPendingNotices(activityContext)
-                });
-            });
-        } catch (err) {
-            cleanupScriptDir(scriptDir);
-            console.error('[terminal] script setup error:', err.message);
-            return res.status(500).json({
-                message: 'Failed to prepare script execution.',
+        return {
+            status: 403,
+            result: {
+                message: 'Command blocked by SAFE_MODE policy.',
+                activityId,
                 output: '',
-                exitCode: 1,
+                exitCode: 126,
                 timedOut: false,
+                interrupted: false,
+                blocked: true,
                 outputTruncated: false,
-                maxOutputChars,
-                mode: 'script',
-                notices: getPendingNotices(activityContext)
-            });
-        }
-        return;
+                maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                mode,
+                notices
+            }
+        };
     }
 
-    // ── Inline mode ───────────────────────────────────────────────────────────
+    console.log('[terminal] execute source=' + source + ' mode=' + mode + ' id=' + activityId + ' cwd=' + cwd + ' timeoutMs=' + timeoutMs + ' maxOutputChars=' + maxOutputChars);
+    console.log(mode === 'inline' ? '[terminal] command: ' + command : '[terminal] script: ' + payloadByteLength + ' bytes');
 
-    executeBounded({
-        command,
-        shell: process.env.SHELL || '/bin/bash',
-        cwd,
-        timeoutMs,
-        maxOutputChars
-    }).then(({ output, limitedOutput, outputTruncated, exitCode, timedOut }) => {
+    let scriptDir = null;
+    try {
+        let commandToRun = command;
+        let executionShell = process.env.SHELL || '/bin/bash';
+        if (mode === 'script') {
+            const created = createScriptFile(script);
+            scriptDir = created.scriptDir;
+            commandToRun = quoteShellArg(shell) + ' ' + quoteShellArg(created.scriptPath);
+            executionShell = shell;
+        }
+
+        const execution = await executeBounded({
+            activityId,
+            command: commandToRun,
+            shell: executionShell,
+            cwd,
+            timeoutMs,
+            maxOutputChars
+        });
         const notices = getPendingNotices(activityContext);
-
-        console.log('[terminal] command finished. exitCode=' + exitCode + ' timedOut=' + timedOut + ' output_length=' + output.length);
 
         appendActivity({
             type: 'command_finished',
             id: activityId,
+            source,
             mode,
             commandHash: payloadHash,
             commandPreview: payloadPreview,
             payloadByteLength,
-            exitCode,
-            timedOut,
+            exitCode: execution.exitCode,
+            timedOut: execution.timedOut,
+            interrupted: execution.interrupted,
             blocked: false,
             durationMs: Date.now() - startedAtMs,
-            outputLength: output.length,
-            outputTruncated,
-            outputPreview: preview(output, 1200),
+            outputLength: execution.output.length,
+            outputTruncated: execution.outputTruncated,
+            outputPreview: preview(execution.output, 1200),
             noticesCount: notices.length,
-            errorPreview: null,
+            errorPreview: execution.exitCode === 0 ? null : preview(execution.output, 500),
             cwd,
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
-        return res.status(200).json({
-            message: exitCode === 0 ? 'Command executed successfully.' : 'Command finished with error.',
-            output: limitedOutput,
-            exitCode,
-            timedOut,
-            outputTruncated,
-            maxOutputChars,
-            mode: 'inline',
-            notices
-        });
-    }).catch((err) => {
-        console.error('[terminal] command execution error:', err.message);
-        return res.status(500).json({
-            message: 'Command execution failed.',
-            output: '',
+        let message = mode === 'script' ? 'Script executed successfully.' : 'Command executed successfully.';
+        if (execution.interrupted) message = mode === 'script' ? 'Script interrupted.' : 'Command interrupted.';
+        else if (execution.exitCode !== 0) message = mode === 'script' ? 'Script finished with error.' : 'Command finished with error.';
+
+        return {
+            status: 200,
+            result: {
+                message,
+                activityId,
+                output: execution.limitedOutput,
+                exitCode: execution.exitCode,
+                timedOut: execution.timedOut,
+                interrupted: execution.interrupted,
+                blocked: false,
+                outputTruncated: execution.outputTruncated,
+                maxOutputChars: execution.maxOutputChars,
+                mode,
+                notices
+            }
+        };
+    } catch (error) {
+        console.error('[terminal] execution error:', error.message);
+        const notices = getPendingNotices(activityContext);
+        appendActivity({
+            type: 'command_finished',
+            id: activityId,
+            source,
+            mode,
+            commandHash: payloadHash,
             exitCode: 1,
             timedOut: false,
+            interrupted: false,
+            blocked: false,
+            durationMs: Date.now() - startedAtMs,
+            outputLength: 0,
             outputTruncated: false,
-            maxOutputChars,
-            mode: 'inline',
-            notices: getPendingNotices(activityContext)
-        });
-    });
+            outputPreview: '',
+            noticesCount: notices.length,
+            errorPreview: preview(error.message, 500),
+            cwd,
+            shell: mode === 'script' ? shell : undefined
+        }, activityContext);
+
+        return {
+            status: 500,
+            result: {
+                message: mode === 'script' ? 'Script execution failed.' : 'Command execution failed.',
+                activityId,
+                output: '',
+                exitCode: 1,
+                timedOut: false,
+                interrupted: false,
+                blocked: false,
+                outputTruncated: false,
+                maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                mode,
+                notices
+            }
+        };
+    } finally {
+        cleanupScriptDir(scriptDir);
+    }
 }
 
-// ── Interrupt handler ─────────────────────────────────────────────────────────
+async function terminalHandler(req, res) {
+    setCors(res);
+    if (req.method === 'OPTIONS') return res.status(200).end();
+
+    const parsed = parseRequest(req);
+    if (parsed.error) return res.status(parsed.status).json({ message: parsed.message });
+
+    const outcome = await executeCommand(parsed, getActivityContext(req), 'rest');
+    return res.status(outcome.status).json(outcome.result);
+}
 
 function interruptHandler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ message: 'Method not allowed. Please use POST.' });
-    }
+    if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed. Please use POST.' });
 
-    if (currentChild) {
-        currentChild.kill('SIGTERM');
-        currentChild = null;
-        currentChildCwd = null;
-        return res.status(200).json({ message: 'Command interrupted.' });
+    const activityId = (req.body && req.body.activityId) || (req.query && req.query.activityId);
+    const result = interruptCommand(activityId);
+    if (result.reason === 'ambiguous') {
+        return res.status(409).json({ message: 'Multiple commands are running. Provide activityId.', activeIds: result.activeIds });
     }
-
-    return res.status(200).json({ message: 'No running command.' });
+    if (result.interrupted) return res.status(200).json({ message: 'Command interrupted.', activityId: result.activityId });
+    return res.status(200).json({ message: 'No matching running command.', activityId: activityId || null, activeIds: result.activeIds || [] });
 }
 
 function getCurrentDirectory() {
     return Promise.resolve(process.env.HOME || process.cwd());
 }
 
-module.exports = { getCurrentDirectory, interruptHandler, terminalHandler, executeBounded, parseRequest };
+module.exports = {
+    executeBounded,
+    executeCommand,
+    getCurrentDirectory,
+    interruptHandler,
+    parseRequest,
+    terminalHandler
+};
