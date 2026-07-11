@@ -8,6 +8,32 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 No unreleased changes yet.
 
+## [1.0.6] - 2026-07-11
+
+### Added
+
+- Added bounded multi-line script execution to the MCP `run_terminal_command` tool while preserving the existing inline `command` contract.
+- Added per-command activity IDs and independent tracking for concurrent executions.
+- Added targeted interruption by `activityId`, with ambiguity protection when several commands are active.
+- Added MCP smoke tests and expanded executor, REST and OpenAPI regression coverage.
+
+### Changed
+
+- Unified REST and MCP command execution through the same timeout, output-limit, SAFE_MODE, activity-log and notice policies.
+- GET command options now honor `cwd`, `timeoutMs` and `maxOutputChars` from query parameters.
+- Invalid working directories are rejected instead of silently falling back to another directory.
+- Process interruption and timeout now terminate the spawned process group on POSIX systems.
+- Increased the Express JSON body limit to match `MAX_SCRIPT_BODY_BYTES`.
+- OpenAPI now reads the package version automatically and documents activity/interruption fields.
+- Updated compatible runtime dependencies and removed the unused `swagger-autogen` package.
+
+### Security
+
+- Server startup logs now redact authentication material and expose only token-presence flags.
+- HTTP 500 responses no longer return server stack traces to clients.
+- MCP now enforces the same SAFE_MODE rules and bounded executor as REST.
+- Activity previews sample large payloads before secret redaction, avoiding pathological processing of large script bodies.
+
 ## [1.0.5] - 2026-07-09
 
 ### Added
