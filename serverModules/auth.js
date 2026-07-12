@@ -30,11 +30,11 @@ module.exports = (log, config) => ((req, res, next) => {
             next();
             return;
         }
-        if (bearerToken && validateAccessToken(bearerToken, expectedResource(config))) {
+        if (bearerToken && validateAccessToken(bearerToken, expectedResource(config, req))) {
             next();
             return;
         }
-        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${protectedResourceMetadataUrl(config)}"`);
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${protectedResourceMetadataUrl(config, req)}", scope="terminal"`);
         res.sendStatus(401);
         return;
     }

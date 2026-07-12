@@ -1,0 +1,61 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, private hostnames, credentials, production configuration or sensitive command output.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.0.7 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Ubuntu 24.04, Node 20.20.2, Nginx
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Client surface
+      options:
+        - REST/OpenAPI
+        - MCP/OAuth
+        - Both
+        - Server startup/setup
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use the smallest sanitized example possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized logs
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed all secrets and private deployment data.
+          required: true
+        - label: I ran `npm run check` and `npm test` where possible.
+          required: true
