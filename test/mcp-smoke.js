@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const port = Number(process.env.TEST_PORT || 33100);
-const token = process.env.TEST_TOKEN || 'test-token';
+const token = process.env.TEST_TOKEN || 't'.repeat(64);
 const configPath = path.join(root, 'config.json');
 const backupPath = path.join(root, 'config.json.test-backup');
 let server;
@@ -119,6 +119,7 @@ function assert(condition, label, details = '') {
 
         response = await request('GET', '/.well-known/oauth-authorization-server');
         assert(response.status === 200 && response.body.scopes_supported.includes('terminal') && response.body.registration_endpoint.endsWith('/oauth/register'), 'OAuth authorization-server metadata');
+        assert(response.body.revocation_endpoint.endsWith('/oauth/revoke') && response.body.revocation_endpoint_auth_methods_supported.includes('none'), 'OAuth metadata advertises token revocation');
 
         response = await request('POST', '/mcp', { jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
         assert(response.status === 401 && String(response.headers['www-authenticate']).includes('resource_metadata=') && String(response.headers['www-authenticate']).includes('scope="terminal"'), 'MCP unauthorized challenge advertises OAuth metadata and scope');

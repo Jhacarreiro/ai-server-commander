@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const port = Number(process.env.TEST_PORT || 33099);
-const token = process.env.TEST_TOKEN || 'test-token';
+const token = process.env.TEST_TOKEN || 't'.repeat(64);
 const configPath = path.join(root, 'config.json');
 const backupPath = path.join(root, 'config.json.test-backup');
 let server;

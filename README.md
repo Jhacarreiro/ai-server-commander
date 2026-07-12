@@ -90,7 +90,6 @@ Minimal configuration:
 ```json
 {
   "port": 3000,
-  "useLocalTunnel": false,
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-with-a-long-random-secret",
   "mcpToken": "replace-with-a-separate-long-random-secret"
@@ -130,13 +129,13 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | Key | Required | Purpose |
 |---|---:|---|
 | `port` | Yes | Local TCP port used by the Node server. |
-| `useLocalTunnel` | Yes | Starts the legacy LocalTunnel integration when `true`. Prefer a maintained reverse proxy or tunnel for production. |
-| `localTunnelSubdomain` | When LocalTunnel is enabled | Requested LocalTunnel subdomain. |
-| `productionDomain` | Recommended | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
+| `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
+
+LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency chain could not be updated safely. Existing configurations with `useLocalTunnel: true` now fail with migration guidance. Use a maintained HTTPS reverse proxy or tunnel and set `productionDomain` explicitly.
 
 ### Environment variables
 
@@ -146,6 +145,10 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | `COMMAND_TIMEOUT_MS` | `120000` | Server-wide maximum command duration. Client requests can ask for less, not more. |
 | `MAX_OUTPUT_CHARS` | `12000` | Server-wide maximum returned output. |
 | `MAX_SCRIPT_BODY_BYTES` | `524288` | Maximum script/request body size. |
+| `OAUTH_STATE_PATH` | `runtime/oauth-state.json` | Persistent OAuth client and token-hash state. |
+| `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
+| `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
+| `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
 | `SHELL` | Host default | Shell used for inline execution and as script-mode fallback. |
 | `NODE_ENV` | unset | Standard Node environment label. |
 
@@ -218,12 +221,12 @@ The server publishes:
 /oauth/register
 /oauth/authorize
 /oauth/token
+/oauth/revoke
 ```
 
-The built-in flow supports dynamic client registration, authorization code + PKCE and refresh tokens. The authorization page asks for the server `authToken` as the approval code.
+The built-in flow supports dynamic client registration, authorization code + PKCE, refresh-token rotation and RFC-style token revocation. The authorization page asks for the server `authToken` as the approval code.
 
-> [!IMPORTANT]
-> OAuth clients, authorization codes and tokens are currently stored in process memory. Restarting the server invalidates them and connected MCP clients may need to reconnect. Persistent OAuth state is planned, not yet implemented.
+OAuth state is persisted atomically at `OAUTH_STATE_PATH`. Client secrets, authorization codes, access tokens and refresh tokens are stored only as SHA-256 hashes; raw values are returned to the client only when issued. The state file is forced to mode `600` on supported POSIX filesystems. After upgrading from an in-memory-only release, existing clients must authorize once; credentials issued by v1.0.8 or later survive normal restarts.
 
 ### ChatGPT MCP readiness
 
@@ -335,7 +338,7 @@ It does **not** provide:
 - per-user operating-system isolation;
 - a path allowlist;
 - protection from every form of command composition or shell indirection;
-- durable OAuth state;
+- encrypted OAuth metadata at rest (secret and token values are hashed, while non-secret client metadata remains readable);
 - rate limiting.
 
 Recommended production controls:
@@ -366,7 +369,8 @@ The smoke suite covers:
 - invalid working directories;
 - concurrency and targeted interruption;
 - MCP initialization, metadata and execution;
-- OAuth metadata and challenge behavior;
+- OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
+- native setup and Firebase Admin compatibility;
 - `SAFE_MODE` results;
 - OpenAPI generation and version alignment.
 
@@ -378,9 +382,9 @@ CI runs checks on supported Node versions for every push and pull request.
 
 Set `productionDomain` to the exact external HTTPS origin and forward `Host` and `X-Forwarded-Proto` from the reverse proxy.
 
-### The MCP client asks to reconnect after a restart
+### The MCP client asks to reconnect after an upgrade or restart
 
-OAuth state is currently in memory. Re-run the connector authorization flow.
+Confirm that every release uses the same `OAUTH_STATE_PATH` and that the service user can read and write it. Upgrading from v1.0.7 or earlier requires one new authorization because those releases kept OAuth state only in memory. A missing, moved or deleted state file also requires reauthorization.
 
 ### A command runs in the wrong directory
 

@@ -9,7 +9,8 @@ AI Server Commander is maintained on a best-effort basis.
 3. Confirm the Node version with `node --version`.
 4. Test `/openapi.json` locally.
 5. Check the service log and reverse-proxy log.
-6. Remove all tokens, private hostnames, usernames, paths and command output that may contain secrets.
+6. Confirm that all releases use the same `OAUTH_STATE_PATH` when diagnosing MCP reconnects.
+7. Remove all tokens, private hostnames, usernames, paths and command output that may contain secrets.
 
 ## Where to ask
 

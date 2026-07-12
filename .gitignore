@@ -13,3 +13,4 @@ config.json
 coverage/
 .nyc_output/
 .claude-octopus/
+firebaseAdmin.json
