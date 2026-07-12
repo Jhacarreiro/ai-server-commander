@@ -13,7 +13,8 @@ module.exports = (log, config) => ((req, res, next) => {
         '/.well-known/openid-configuration',
         '/oauth/register',
         '/oauth/authorize',
-        '/oauth/token'
+        '/oauth/token',
+        '/oauth/revoke'
     ]);
 
     if (publicOAuthPaths.has(req.path)) {
@@ -30,7 +31,7 @@ module.exports = (log, config) => ((req, res, next) => {
             next();
             return;
         }
-        if (bearerToken && validateAccessToken(bearerToken, expectedResource(config, req))) {
+        if (bearerToken && validateAccessToken(bearerToken, expectedResource(config, req), config)) {
             next();
             return;
         }

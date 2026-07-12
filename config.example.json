@@ -1,7 +1,5 @@
 {
   "port": 3000,
-  "useLocalTunnel": false,
-  "localTunnelSubdomain": null,
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-with-a-long-random-secret",
   "mcpToken": "replace-with-a-separate-long-random-secret"
