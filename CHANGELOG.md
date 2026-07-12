@@ -8,6 +8,33 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 No unreleased changes yet.
 
+## [1.0.7] - 2026-07-12
+
+### Added
+
+- Added MCP tool title, exact output schema, OAuth security schemes, risk annotations and ChatGPT-compatible metadata mirrors.
+- Added `structuredContent` to MCP tool results while retaining the existing text content for backward compatibility.
+- Added MCP regression tests for tool metadata, structured success results and structured SAFE_MODE failures.
+- Added complete open-source project documentation: architecture, deployment, contribution, security, support, code of conduct, attribution, configuration examples and Custom GPT instructions.
+- Added GitHub Actions CI for Node 20 and 22, Dependabot configuration, issue forms and a pull request template.
+
+### Changed
+
+- Renamed public package metadata to `ai-server-commander`, declared Node 20+ support and added repository, issue and keyword metadata.
+- Made MCP server identity and authorization-page copy deployment-neutral instead of host- or client-specific.
+- Added protected-resource documentation and a scoped `WWW-Authenticate` challenge.
+- Replaced the outdated roadmap and Custom GPT prompt with current capability, safety and parity guidance.
+- Expanded the README with quick start, ChatGPT Action setup, MCP/OAuth setup, configuration, examples, security boundaries, testing and troubleshooting.
+
+### Removed
+
+- Removed tracked macOS, IDE and obsolete scratch files from the public repository.
+
+### Security
+
+- Documented that terminal execution is not a sandbox and provided a hardened unprivileged systemd deployment example.
+- Added private vulnerability reporting guidance and explicit secret-handling rules for issues and pull requests.
+
 ## [1.0.6] - 2026-07-11
 
 ### Added
