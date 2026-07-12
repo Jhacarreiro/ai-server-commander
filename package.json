@@ -1,8 +1,8 @@
 {
-  "name": "servercommander",
-  "version": "1.0.6",
-  "description": "",
-  "main": "index.js",
+  "name": "ai-server-commander",
+  "version": "1.0.7",
+  "description": "Self-hosted REST/OpenAPI and remote MCP bridge for bounded AI-assisted terminal execution.",
+  "main": "main.js",
   "scripts": {
     "start": "node main.js",
     "debug": "node --inspect-brk main.js",
@@ -11,12 +11,22 @@
     "test:routes": "node test/routes-smoke.js",
     "test:openapi": "node test/openapi-smoke.js",
     "test:executor": "node test/executor-smoke.js",
-    "test:all": "npm run test:executor && npm run test:routes && npm run test:mcp && npm run test:openapi",
-    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js",
-    "test:mcp": "node test/mcp-smoke.js"
+    "test:all": "npm run test:executor && npm run test:routes && npm run test:mcp && npm run test:openapi && npm run test:docs",
+    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check api/oauth.js && node --check serverModules/auth.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js",
+    "test:mcp": "node test/mcp-smoke.js",
+    "test:docs": "node test/docs-smoke.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "mcp",
+    "openapi",
+    "chatgpt",
+    "claude",
+    "terminal",
+    "self-hosted",
+    "oauth",
+    "automation"
+  ],
+  "author": "Jo\u00e3o Carreiro",
   "license": "MIT",
   "dependencies": {
     "diff": "^5.2.2",
@@ -31,5 +41,16 @@
     "simple-git": "^3.36.0",
     "socket.io": "^4.8.3",
     "swagger-jsdoc": "^6.3.0"
+  },
+  "homepage": "https://github.com/Jhacarreiro/ai-server-commander#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jhacarreiro/ai-server-commander.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Jhacarreiro/ai-server-commander/issues"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

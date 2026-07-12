@@ -1,5 +1,9 @@
+.git/
+.github/
+.claude-octopus/
 node_modules/
 runtime/
+test/
 config.json
 .env
 .env.*
@@ -12,4 +16,3 @@ config.json
 .vscode/
 coverage/
 .nyc_output/
-.claude-octopus/
