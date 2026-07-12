@@ -16,3 +16,4 @@ config.json
 .vscode/
 coverage/
 .nyc_output/
+firebaseAdmin.json
