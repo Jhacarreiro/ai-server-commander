@@ -2,7 +2,7 @@
 
 AI Server Commander follows a capability-first model: implement a capability once in shared core code, then expose it through REST/OpenAPI and MCP with matching safety semantics.
 
-## Current baseline — v1.0.7
+## Current baseline — v1.0.8
 
 - Shared bounded executor for REST and MCP.
 - Inline command and multi-line script modes.
@@ -11,23 +11,11 @@ AI Server Commander follows a capability-first model: implement a capability onc
 - `SAFE_MODE` denylist.
 - Activity logging and notices.
 - ChatGPT Custom GPT Action support through OpenAPI.
-- Remote MCP with OAuth discovery, dynamic registration, PKCE and refresh tokens.
+- Remote MCP with OAuth discovery, dynamic registration, PKCE, persistent hashed state, refresh rotation and revocation.
 - MCP title, input/output schemas, risk annotations, OAuth security metadata and structured results.
 - CI, deployment documentation and standard open-source contribution/security files.
 
 ## Near-term priorities
-
-### Persistent OAuth state
-
-OAuth clients and tokens are currently in memory and are invalidated by restart.
-
-Planned work:
-
-- encrypted or permission-restricted persistent storage;
-- token expiry and cleanup;
-- explicit revocation;
-- restart and migration tests;
-- documented backup and rotation behavior.
 
 ### Policy profiles and path controls
 
@@ -76,14 +64,9 @@ Add configurable:
 - authentication failure throttling;
 - structured security events.
 
-### Dependency modernization
+### Dependency maintenance
 
-Migrate legacy dependency chains rather than applying forced audit fixes:
-
-- replace or remove LocalTunnel support;
-- modernize interactive setup and Inquirer usage;
-- upgrade Firebase Admin with regression tests;
-- remove unused legacy file-editing code where compatibility allows.
+The high-severity LocalTunnel and setup dependency chains were removed in v1.0.8, and Firebase Admin moved to the latest Node 20-compatible major. Continue monitoring the remaining moderate Google/Firebase transitive advisories and upgrade when forward-compatible upstream fixes exist.
 
 ## Later possibilities
 

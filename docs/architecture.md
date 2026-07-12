@@ -50,7 +50,8 @@ Remote MCP client ── OAuth/token ───── MCP route ────┘  
 | `serverModules/commandExecutor.js` | Process tracking, timeout, output caps and interruption. |
 | `api/terminal.js` | Shared request parsing and command result shaping. |
 | `api/mcp.js` | MCP JSON-RPC adapter and tool descriptor. |
-| `api/oauth.js` | OAuth metadata, registration, consent and token endpoints. |
+| `api/oauth.js` | OAuth metadata, registration, consent, token rotation and revocation endpoints. |
+| `serverModules/oauthStore.js` | Atomic persistent OAuth state with hashed secrets and tokens. |
 | `api/activityLog.js` | Redacted activity records and context. |
 | `api/notices.js` | Scoped operational notices. |
 | `serverModules/swaggerSetup.js` | OpenAPI generation. |
@@ -85,9 +86,10 @@ Persistent application state is intentionally small:
 
 - `config.json`: deployment configuration and secrets;
 - `runtime/activity/`: activity logs and indexes;
-- `runtime/notices/`: notice state where applicable.
+- `runtime/notices/`: notice state where applicable;
+- `runtime/oauth-state.json`: persistent OAuth clients plus hashed authorization codes, access tokens and refresh tokens.
 
-OAuth clients, authorization codes, access tokens and refresh tokens are currently held in memory. They are lost on restart.
+OAuth mutations use an atomic temporary-file-and-rename sequence. The state file is mode `600`; raw client secrets and token values are never written to disk. A malformed or symlinked OAuth state file fails closed at startup. Refresh tokens rotate on use and both access and refresh tokens can be explicitly revoked.
 
 ## Extension rule
 

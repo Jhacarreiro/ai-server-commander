@@ -37,5 +37,5 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Audit critical runtime vulnerabilities
-        run: npm audit --omit=dev --audit-level=critical
+      - name: Audit high and critical runtime vulnerabilities
+        run: npm audit --omit=dev --audit-level=high

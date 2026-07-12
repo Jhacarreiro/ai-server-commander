@@ -6,9 +6,7 @@ const { configPromise } = require('./configHandler');
 const { openapiSpecification, setURL } = require('./swaggerSetup');
 const {addApi} = require("./apiRoutes");
 const {log, getLog} = require("./logger");
-const {initTunnel} = require("./setupTunnel");
 const {initDB} = require("./firebaseDB");
-const {viewAppHandler, editAppHandler} = require("../api/firebaseAppHandlers");
 const fs = require('fs');
 const marked = require('marked');
 const { MAX_SCRIPT_BODY_BYTES } = require('./commandExecutor');
@@ -19,9 +17,7 @@ module.exports = async () => {
     const config = await configPromise;
     log('got config', {
         port: config.port,
-        useLocalTunnel: config.useLocalTunnel,
         productionDomain: config.productionDomain,
-        localTunnelSubdomain: config.localTunnelSubdomain,
         hasAuthToken: Boolean(config.authToken),
         hasMcpToken: Boolean(config.mcpToken)
     });
@@ -56,9 +52,8 @@ const htmlContent = marked.parse(data);
 
     expressApp.use(require('./auth.js')(log, config));
 
-    let serverUrl = config.productionDomain;
-    let activeTunnel;
-    addApi(expressApp, config, () => serverUrl, () => activeTunnel && activeTunnel.close());
+    const serverUrl = config.productionDomain;
+    addApi(expressApp, config, () => serverUrl, () => {});
 
     expressApp.use((err, req, res, next) => {
         if (res.headersSent) return next(err);
@@ -70,20 +65,7 @@ const htmlContent = marked.parse(data);
 
     server.listen(config.port, () => {
         log('Server running on http://localhost:' + config.port);
-        if (config.useLocalTunnel) {
-            initTunnel(config).then((data) => {
-                    if (!data) {
-                        process.exit();
-                    } else {
-                        activeTunnel = data.tunnel;
-                        serverUrl = data.url;
-                        log('set url to', data.url);
-                    }
-                }
-            );
-        } else {
-            setURL(serverUrl);
-        }
+        setURL(serverUrl);
     });
     return server;
 };

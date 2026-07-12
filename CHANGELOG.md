@@ -8,6 +8,35 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 No unreleased changes yet.
 
+## [1.0.8] - 2026-07-12
+
+### Added
+
+- Added atomic persistent OAuth state through `OAUTH_STATE_PATH`.
+- Added refresh-token rotation and `/oauth/revoke` for access and refresh tokens.
+- Added restart, public-client PKCE, confidential-client, rotation, revocation, corruption and file-mode regression tests.
+- Added native first-run setup using Node's built-in readline APIs.
+- Added Firebase Admin v13 compatibility tests with an injected mock repository.
+
+### Changed
+
+- OAuth clients, authorization codes, access tokens and refresh tokens are now keyed by SHA-256 hashes on disk; raw secret values are never persisted.
+- OAuth state fails closed when malformed or presented through a symlink and is forced to mode `600` on supported POSIX systems.
+- Upgraded Firebase Admin from v12 to the latest Node 20-compatible v13 release.
+- Extended OAuth discovery metadata with the revocation endpoint.
+- Updated deployment, architecture, configuration, troubleshooting and upgrade documentation for persistent OAuth state.
+
+### Removed
+
+- Removed LocalTunnel support and its vulnerable pinned Axios dependency chain.
+- Removed Inquirer and replaced the setup flow with Node built-ins.
+
+### Security
+
+- Reduced runtime audit findings from 15 to 8, with zero high and zero critical findings.
+- Added explicit access-token and refresh-token revocation.
+- Added atomic state-file replacement, restrictive file permissions and raw-token non-persistence.
+
 ## [1.0.7] - 2026-07-12
 
 ### Added

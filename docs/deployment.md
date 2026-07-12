@@ -56,6 +56,7 @@ Environment=SAFE_MODE=true
 Environment=COMMAND_TIMEOUT_MS=120000
 Environment=MAX_OUTPUT_CHARS=12000
 Environment=MAX_SCRIPT_BODY_BYTES=524288
+Environment=OAUTH_STATE_PATH=/opt/ai-server-commander-state/oauth-state.json
 ExecStart=/usr/bin/node main.js
 Restart=on-failure
 RestartSec=3
@@ -63,7 +64,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ai-server-commander/runtime
+ReadWritePaths=/opt/ai-server-commander/runtime /opt/ai-server-commander-state
 
 [Install]
 WantedBy=multi-user.target
@@ -102,6 +103,8 @@ server {
 
 Set `productionDomain` to `https://commander.example.com`.
 
+LocalTunnel support was removed in v1.0.8. Deployments upgrading from `useLocalTunnel: true` must move to a maintained reverse proxy, VPN or tunnel and set `productionDomain` to the external HTTPS origin.
+
 ## Post-deployment validation
 
 ```bash
@@ -130,13 +133,14 @@ Prefer immutable release directories and a stable symlink:
 /opt/ai-server-commander-current -> /opt/releases/ai-server-commander-1.0.7
 /opt/ai-server-commander-state/config.json
 /opt/ai-server-commander-state/runtime/
+/opt/ai-server-commander-state/oauth-state.json
 ```
 
 Suggested process:
 
 1. Download or clone the new tagged release into a new directory.
 2. Run `npm ci --omit=dev`.
-3. Link the existing `config.json` and `runtime/` state.
+3. Link the existing `config.json` and `runtime/` state, and preserve the same `OAUTH_STATE_PATH`.
 4. Run `npm run check` and `npm test` before cutover.
 5. Start a staging instance on another port.
 6. Validate REST, MCP, OAuth metadata and OpenAPI.
@@ -158,6 +162,7 @@ Never delete the previous release before the new version has passed production v
 Back up:
 
 - `config.json` using encrypted secret-aware storage;
+- `oauth-state.json` if uninterrupted MCP authorization is required;
 - any runtime records required for audit or diagnostics;
 - reverse-proxy and service-unit configuration.
 
