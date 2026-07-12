@@ -79,7 +79,8 @@ function addOAuthRoutes(app, config) {
             resource: mcpUrl(config, req),
             authorization_servers: [base],
             scopes_supported: ['terminal'],
-            bearer_methods_supported: ['header']
+            bearer_methods_supported: ['header'],
+            resource_documentation: 'https://github.com/Jhacarreiro/ai-server-commander#remote-mcp-clients'
         });
     });
 
@@ -89,7 +90,8 @@ function addOAuthRoutes(app, config) {
             resource: mcpUrl(config, req),
             authorization_servers: [base],
             scopes_supported: ['terminal'],
-            bearer_methods_supported: ['header']
+            bearer_methods_supported: ['header'],
+            resource_documentation: 'https://github.com/Jhacarreiro/ai-server-commander#remote-mcp-clients'
         });
     });
 
@@ -129,7 +131,7 @@ function addOAuthRoutes(app, config) {
             response_types: ['code'],
             token_endpoint_auth_method: body.token_endpoint_auth_method || 'none',
             scope: body.scope || 'terminal',
-            client_name: body.client_name || 'Claude MCP client'
+            client_name: body.client_name || 'AI Server Commander MCP client'
         };
         state().clients.set(client.client_id, client);
 
@@ -148,11 +150,11 @@ function addOAuthRoutes(app, config) {
 
         const hidden = Object.entries(q).map(([k, v]) => `<input type="hidden" name="${htmlEscape(k)}" value="${htmlEscape(v)}">`).join('\n');
         res.type('html').send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Authorize Gallivanter Terminal</title></head>
+<html><head><meta charset="utf-8"><title>Authorize AI Server Commander</title></head>
 <body style="font-family: system-ui, sans-serif; max-width: 720px; margin: 48px auto; line-height: 1.45;">
-<h1>Authorize Gallivanter Terminal</h1>
-<p>This connector can run shell commands on Gallivanter through the <code>run_terminal_command</code> MCP tool.</p>
-<p>Only approve this if you initiated the connection from Claude.</p>
+<h1>Authorize AI Server Commander</h1>
+<p>This connector can run shell commands on the configured host through the <code>run_terminal_command</code> MCP tool.</p>
+<p>Only approve this if you initiated the connection from a trusted MCP client.</p>
 <form method="post" action="/oauth/authorize">
 ${hidden}
 <label>Approval code<br><input name="approval_code" type="password" autocomplete="one-time-code" style="width: 100%; font-size: 18px; padding: 8px;"></label>
@@ -269,14 +271,12 @@ function validateAccessToken(accessToken, expectedResource) {
     return true;
 }
 
-function protectedResourceMetadataUrl(config) {
-    const base = String(config.productionDomain || '').replace(/\/$/, '') || 'https://gpt-terminal.gallivanter.biz';
-    return `${base}/.well-known/oauth-protected-resource/mcp`;
+function protectedResourceMetadataUrl(config, req) {
+    return `${baseUrl(config, req)}/.well-known/oauth-protected-resource/mcp`;
 }
 
-function expectedResource(config) {
-    const base = String(config.productionDomain || '').replace(/\/$/, '') || 'https://gpt-terminal.gallivanter.biz';
-    return `${base}/mcp`;
+function expectedResource(config, req) {
+    return mcpUrl(config, req);
 }
 
 module.exports = { addOAuthRoutes, validateAccessToken, protectedResourceMetadataUrl, expectedResource };

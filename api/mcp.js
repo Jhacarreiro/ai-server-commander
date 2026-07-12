@@ -34,9 +34,51 @@ module.exports = function createMcpHandler() {
         catch (_) { return '0.0.0'; }
     })();
 
+    const securitySchemes = [{ type: 'oauth2', scopes: ['terminal'] }];
+
+    const outputSchema = {
+        type: 'object',
+        properties: {
+            message: { type: 'string' },
+            activityId: { type: 'string' },
+            output: { type: 'string' },
+            exitCode: { type: 'integer' },
+            timedOut: { type: 'boolean' },
+            interrupted: { type: 'boolean' },
+            blocked: { type: 'boolean' },
+            outputTruncated: { type: 'boolean' },
+            maxOutputChars: { type: 'integer' },
+            mode: { type: 'string', enum: ['inline', 'script'] },
+            notices: {
+                type: 'array',
+                items: { type: 'object', additionalProperties: true }
+            }
+        },
+        required: [
+            'message', 'activityId', 'output', 'exitCode', 'timedOut',
+            'interrupted', 'blocked', 'outputTruncated', 'maxOutputChars',
+            'mode', 'notices'
+        ],
+        additionalProperties: false
+    };
+
     const tool = {
         name: 'run_terminal_command',
-        description: 'Run a bounded shell command or multi-line script on the AI Server Commander host. Use only when the user explicitly asks for remote terminal execution. Returns output, exit code, timeout, interruption, SAFE_MODE and truncation status.',
+        title: 'Run terminal command',
+        description: 'Use this when the user explicitly asks to run a bounded shell command or multi-line script on the AI Server Commander host. The tool can modify or delete data and can reach external systems, so show the exact command and obtain any required confirmation before calling it.',
+        annotations: {
+            readOnlyHint: false,
+            destructiveHint: true,
+            openWorldHint: true,
+            idempotentHint: false
+        },
+        securitySchemes,
+        _meta: {
+            securitySchemes,
+            'openai/toolInvocation/invoking': 'Running terminal command…',
+            'openai/toolInvocation/invoked': 'Terminal command finished'
+        },
+        outputSchema,
         inputSchema: {
             type: 'object',
             properties: {
@@ -94,8 +136,8 @@ module.exports = function createMcpHandler() {
             return jsonRpcResult(id, {
                 protocolVersion: params.protocolVersion || '2025-03-26',
                 capabilities: { tools: {} },
-                serverInfo: { name: 'gallivanter-terminal', version: packageVersion },
-                instructions: 'This MCP server exposes bounded remote terminal execution on Gallivanter. Use run_terminal_command only with explicit user approval and prefer short, verifiable commands. Multi-line scripts are supported with mode=script.'
+                serverInfo: { name: 'ai-server-commander', version: packageVersion },
+                instructions: 'This MCP server exposes bounded remote terminal execution on the configured host. Use run_terminal_command only with explicit user approval, show the exact command, and prefer short, verifiable commands. Multi-line scripts are supported with mode=script.'
             });
         }
         if (method === 'ping') return jsonRpcResult(id, {});
@@ -117,6 +159,7 @@ module.exports = function createMcpHandler() {
                 const result = outcome.result;
                 return jsonRpcResult(id, {
                     content: [{ type: 'text', text: commandToText(result) || '(no output)' }],
+                    structuredContent: result,
                     isError: outcome.status >= 400 || result.exitCode !== 0 || result.timedOut || result.interrupted || result.blocked
                 });
             } catch (error) {
