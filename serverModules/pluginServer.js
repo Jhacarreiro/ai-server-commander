@@ -53,7 +53,7 @@ const htmlContent = marked.parse(data);
     expressApp.use(require('./auth.js')(log, config));
 
     const serverUrl = config.productionDomain;
-    addApi(expressApp, config, () => serverUrl, () => {});
+    addApi(expressApp, config, () => serverUrl, () => server.close());
 
     expressApp.use((err, req, res, next) => {
         if (res.headersSent) return next(err);

@@ -10,6 +10,7 @@ const AUTH_CODE_TTL_MS = positiveInteger(process.env.OAUTH_AUTH_CODE_TTL_SECONDS
 const ACCESS_TOKEN_TTL_SECONDS = positiveInteger(process.env.OAUTH_ACCESS_TOKEN_TTL_SECONDS, 3600);
 const REFRESH_TOKEN_TTL_MS = positiveInteger(process.env.OAUTH_REFRESH_TOKEN_TTL_SECONDS, 30 * 24 * 3600) * 1000;
 const SUPPORTED_SCOPE = 'terminal';
+const MAX_OAUTH_CLIENTS = positiveInteger(process.env.MAX_OAUTH_CLIENTS, 200);
 
 function baseUrl(config, req) {
     const configured = config.productionDomain || config.serverUrl;
@@ -132,6 +133,9 @@ function addOAuthRoutes(app, config) {
 
     app.post('/oauth/register', (req, res) => {
         const body = req.body || {};
+        if (store.getClientCount() >= MAX_OAUTH_CLIENTS) {
+            return sendJson(res, { error: 'too_many_clients', error_description: 'Client registration limit reached. Rejecting new registrations.' }, 429);
+        }
         const redirectUris = normalizeRedirectUris(body);
         if (!redirectUris.length) return sendJson(res, { error: 'invalid_redirect_uri', error_description: 'At least one HTTPS or localhost redirect URI is required.' }, 400);
         const authMethod = body.token_endpoint_auth_method || 'none';

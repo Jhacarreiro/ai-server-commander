@@ -25,13 +25,14 @@ const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
 
-    // Check if the file exists only when replacements are empty
-    if ( ( !replacements || replacements.length === 0 ) && !fs.existsSync( filePath ) ) {
-        throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' ); // File does not exist and no replacements specified, so do nothing
+    // The file must exist regardless of mode: a missing file cannot be edited,
+    // and creating one implicitly would leave an empty artifact behind.
+    if ( !fs.existsSync( filePath ) ) {
+        throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' );
     }
 
     try {
-        fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
+        fileHandle = await fs.promises.open( filePath, 'r+' ); // read-write; never creates files
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
         log( 'Error reading or creating file:', err );

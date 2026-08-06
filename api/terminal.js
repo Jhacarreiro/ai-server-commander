@@ -166,7 +166,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
     }
 
     console.log('[terminal] execute source=' + source + ' mode=' + mode + ' id=' + activityId + ' cwd=' + cwd + ' timeoutMs=' + timeoutMs + ' maxOutputChars=' + maxOutputChars);
-    console.log(mode === 'inline' ? '[terminal] command: ' + command : '[terminal] script: ' + payloadByteLength + ' bytes');
+    console.log(mode === 'inline' ? '[terminal] command: ' + preview(command, 240) : '[terminal] script: ' + payloadByteLength + ' bytes');
 
     let scriptDir = null;
     try {
