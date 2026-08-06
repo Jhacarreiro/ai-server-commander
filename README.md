@@ -149,6 +149,7 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
+| `MAX_OAUTH_CLIENTS` | `200` | Hard cap on registered OAuth clients; further dynamic registrations are rejected with 429. |
 | `SHELL` | Host default | Shell used for inline execution and as script-mode fallback. |
 | `NODE_ENV` | unset | Standard Node environment label. |
 
