@@ -42,8 +42,15 @@ const applyReplacements = async ( fileContent, replacements ) => {
     originalText,
     replacementText
   } ) => {
-    if(!originalText) {
-      originalText = "";
+    // Empty/null search would match index 0 (String#indexOf("")) and prepend
+    // replacementText to the entire file — treat as an invalid replacement.
+    if (originalText == null || originalText === "") {
+      unsuccessfulReplacements.push("Search text (originalText) must be a non-empty string.");
+      return;
+    }
+    if (typeof originalText !== "string") {
+      unsuccessfulReplacements.push("Search text (originalText) must be a string.");
+      return;
     }
     // Initialize occurrences array
     let occurrences = [];
