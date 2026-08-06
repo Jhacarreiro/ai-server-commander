@@ -222,8 +222,9 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         };
         // TODO no such dir fix
         // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\n', 'utf8' );
+        // Never leak the stack trace to clients; it exposes server-side paths and internals.
         res.status( 500 ).json( {
-            error: stringifyError( error )
+            error: error instanceof Error ? error.message : String( error )
         } );
     }
 };
