@@ -11,6 +11,7 @@ const globalStatusPath = path.join(activityRoot, 'status.json');
 const contextsPath = path.join(activityRoot, 'contexts.json');
 const MAX_TEXT = 500;
 const MAX_CONTEXTS = Math.max(1, Number.parseInt(process.env.MAX_ACTIVITY_CONTEXTS || '500', 10) || 500);
+const MAX_ACTIVITY_LOG_BYTES = Math.max(64 * 1024, Number.parseInt(process.env.MAX_ACTIVITY_LOG_BYTES || String(8 * 1024 * 1024), 10) || (8 * 1024 * 1024));
 const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|\b[A-Za-z0-9_]{0,80}(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*[^\s'";]+)/gi;
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
@@ -60,15 +61,53 @@ function eventPaths(context) {
     return paths;
 }
 
+function rotateLogIfNeeded(logPath) {
+    try {
+        const st = fs.statSync(logPath);
+        if (!st.isFile() || st.size < MAX_ACTIVITY_LOG_BYTES) return;
+        const rotated = `${logPath}.1`;
+        try { fs.unlinkSync(rotated); } catch {}
+        fs.renameSync(logPath, rotated);
+    } catch (error) {
+        if (error && error.code !== 'ENOENT') {
+            console.error('[activity-log] rotate failed', error.message || error);
+        }
+    }
+}
 function appendActivity(event, context = null) {
     try {
         ensureRuntimeDir();
         const safe = { ts: new Date().toISOString(), conversationId: context?.conversationId || 'unknown', conversationKey: context?.conversationKey || 'unknown', taskId: context?.taskId || 'default', taskKey: context?.taskKey || 'default', ...(context?.taskTitle ? { taskTitle: context.taskTitle } : {}), ...event };
-        for (const p of eventPaths(context || safe)) { ensureDir(path.dirname(p.log)); fs.appendFileSync(p.log, JSON.stringify(safe) + '\n', { mode: 0o600 }); fs.writeFileSync(p.status, JSON.stringify(safe, null, 2) + '\n', { mode: 0o600 }); }
+        for (const p of eventPaths(context || safe)) { ensureDir(path.dirname(p.log)); rotateLogIfNeeded(p.log); fs.appendFileSync(p.log, JSON.stringify(safe) + '\n', { mode: 0o600 }); fs.writeFileSync(p.status, JSON.stringify(safe, null, 2) + '\n', { mode: 0o600 }); }
     } catch (error) { console.error('[activity-log] failed', error && error.message ? error.message : error); }
 }
 
-function readLastLines(file, limit) { try { const text = fs.readFileSync(file, 'utf8'); return text.trim().split(/\n/).filter(Boolean).slice(-limit).map((line) => { try { return JSON.parse(line); } catch { return { raw: line }; } }); } catch { return []; } }
+function readLastLines(file, limit) {
+    try {
+        const fd = fs.openSync(file, 'r');
+        try {
+            const stat = fs.fstatSync(fd);
+            const size = stat.size;
+            if (size <= 0) return [];
+            // Read only a trailing window — never pull multi-GB logs into memory.
+            const window = Math.min(size, Math.max(64 * 1024, limit * 4096));
+            const buf = Buffer.alloc(window);
+            fs.readSync(fd, buf, 0, window, size - window);
+            let text = buf.toString('utf8');
+            if (window < size) {
+                const firstNl = text.indexOf('\n');
+                text = firstNl >= 0 ? text.slice(firstNl + 1) : text;
+            }
+            return text.trim().split(/\n/).filter(Boolean).slice(-limit).map((line) => {
+                try { return JSON.parse(line); } catch { return { raw: line }; }
+            });
+        } finally {
+            fs.closeSync(fd);
+        }
+    } catch {
+        return [];
+    }
+}
 function readStatus(file) { return readJson(file, null); }
 function scopedPaths(req) { const scope = String(req.query.scope || 'global'); const context = getActivityContext(req); if (scope === 'conversation') { const dir = path.join(activityRoot, 'conversations', context.conversationKey); return { scope, context, logPath: path.join(dir, 'activity.jsonl'), statusPath: path.join(dir, 'status.json') }; } if (scope === 'task') { const dir = path.join(activityRoot, 'tasks', context.taskKey); return { scope, context, logPath: path.join(dir, 'activity.jsonl'), statusPath: path.join(dir, 'status.json') }; } return { scope: 'global', context, logPath: globalLogPath, statusPath: globalStatusPath }; }
 function listScope(root) { try { return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => { const dir = path.join(root, d.name); return { key: d.name, status: readStatus(path.join(dir, 'status.json')) }; }); } catch { return []; } }
