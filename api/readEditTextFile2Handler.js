@@ -21,6 +21,9 @@ const {
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
 
+const MAX_REPLACEMENTS = Math.max(1, Number.parseInt(process.env.MAX_REPLACEMENTS || '50', 10) || 50);
+const MAX_EDIT_FILE_BYTES = Math.max(1024, Number.parseInt(process.env.MAX_EDIT_FILE_BYTES || String(2 * 1024 * 1024), 10) || (2 * 1024 * 1024));
+
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
@@ -39,6 +42,9 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
 
+    if ( Buffer.byteLength( fileContent, 'utf8' ) > MAX_EDIT_FILE_BYTES ) {
+        throw new Error( `File exceeds MAX_EDIT_FILE_BYTES (${MAX_EDIT_FILE_BYTES}).` );
+    }
 
     const result = await mergeText( fileContent, replacements );
 
@@ -160,7 +166,15 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             }
         } else {
             replacements = body.replacements || (body.replacement && [body.replacement]) || [];
+        
+        if (!Array.isArray(replacements)) {
+            return res.status(400).json({ error: 'replacements must be an array.' });
         }
+        if (replacements.length > MAX_REPLACEMENTS) {
+            return res.status(400).json({ error: `Too many replacements (max ${MAX_REPLACEMENTS}).` });
+        }
+
+}
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
