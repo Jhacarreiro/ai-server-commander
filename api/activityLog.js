@@ -10,6 +10,7 @@ const globalLogPath = path.join(activityRoot, 'global.jsonl');
 const globalStatusPath = path.join(activityRoot, 'status.json');
 const contextsPath = path.join(activityRoot, 'contexts.json');
 const MAX_TEXT = 500;
+const MAX_CONTEXTS = Math.max(1, Number.parseInt(process.env.MAX_ACTIVITY_CONTEXTS || '500', 10) || 500);
 const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|\b[A-Za-z0-9_]{0,80}(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*[^\s'";]+)/gi;
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
@@ -22,6 +23,20 @@ function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file
 function writeJson(file, value) { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 }); }
 function loadContexts() { return readJson(contextsPath, { version: 1, conversations: {} }); }
 function saveContexts(contexts) { writeJson(contextsPath, contexts); }
+function pruneContexts(contexts) {
+    const conversations = contexts.conversations || {};
+    const keys = Object.keys(conversations);
+    if (keys.length <= MAX_CONTEXTS) return contexts;
+    keys.sort((a, b) => {
+        const ta = Date.parse(conversations[a]?.updatedAt || 0) || 0;
+        const tb = Date.parse(conversations[b]?.updatedAt || 0) || 0;
+        return ta - tb;
+    });
+    const drop = keys.slice(0, keys.length - MAX_CONTEXTS);
+    for (const key of drop) delete conversations[key];
+    contexts.conversations = conversations;
+    return contexts;
+}
 function firstValue(...values) { for (const v of values) if (typeof v === 'string' && v.trim()) return v.trim(); return null; }
 
 function getActivityContext(req, overrides = {}) {
@@ -59,9 +74,9 @@ function scopedPaths(req) { const scope = String(req.query.scope || 'global'); c
 function listScope(root) { try { return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => { const dir = path.join(root, d.name); return { key: d.name, status: readStatus(path.join(dir, 'status.json')) }; }); } catch { return []; } }
 function setCors(res) { res.setHeader('Access-Control-Allow-Origin', 'https://chat.openai.com'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, openai-conversation-id, openai-ephemeral-user-id, x-conversation-id'); res.setHeader('Access-Control-Allow-Credentials', true); }
 
-function activityHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const limit = Math.max(1, Math.min(Number(req.query.limit || 50) || 50, 200)); const s = scopedPaths(req); return res.status(200).json({ ok: true, scope: s.scope, context: s.context, logPath: s.logPath, statusPath: s.statusPath, events: readLastLines(s.logPath, limit) }); }
-function activityStatusHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const s = scopedPaths(req); return res.status(200).json({ ok: true, scope: s.scope, context: s.context, logPath: s.logPath, statusPath: s.statusPath, status: readStatus(s.statusPath) }); }
+function activityHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const limit = Math.max(1, Math.min(Number(req.query.limit || 50) || 50, 200)); const s = scopedPaths(req); return res.status(200).json({ ok: true, scope: s.scope, context: s.context, events: readLastLines(s.logPath, limit) }); }
+function activityStatusHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const s = scopedPaths(req); return res.status(200).json({ ok: true, scope: s.scope, context: s.context, status: readStatus(s.statusPath) }); }
 function activityIndexHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); ensureRuntimeDir(); return res.status(200).json({ ok: true, global: readStatus(globalStatusPath), contexts: loadContexts(), conversations: listScope(path.join(activityRoot, 'conversations')), tasks: listScope(path.join(activityRoot, 'tasks')) }); }
-function activityContextHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const context = getActivityContext(req, req.body || {}); const contexts = loadContexts(); contexts.version = 1; contexts.conversations = contexts.conversations || {}; contexts.conversations[context.conversationKey] = { conversationId: context.conversationId, conversationKey: context.conversationKey, taskId: context.taskId, taskKey: context.taskKey, taskTitle: context.taskTitle, updatedAt: new Date().toISOString() }; saveContexts(contexts); appendActivity({ type: 'context_set' }, context); return res.status(200).json({ ok: true, context: contexts.conversations[context.conversationKey] }); }
+function activityContextHandler(req, res) { setCors(res); if (req.method === 'OPTIONS') return res.status(200).end(); const context = getActivityContext(req, req.body || {}); const contexts = loadContexts(); contexts.version = 1; contexts.conversations = contexts.conversations || {}; contexts.conversations[context.conversationKey] = { conversationId: context.conversationId, conversationKey: context.conversationKey, taskId: context.taskId, taskKey: context.taskKey, taskTitle: context.taskTitle, updatedAt: new Date().toISOString() }; pruneContexts(contexts); saveContexts(contexts); appendActivity({ type: 'context_set' }, context); return res.status(200).json({ ok: true, context: contexts.conversations[context.conversationKey] }); }
 
 module.exports = { appendActivity, activityHandler, activityStatusHandler, activityIndexHandler, activityContextHandler, getActivityContext, preview, hashText, redact, safeId };
