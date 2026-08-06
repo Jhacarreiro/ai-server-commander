@@ -140,6 +140,9 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     }
 
     const currentDir = await getCurrentDirectory();
+    if ( typeof filePath !== 'string' || !filePath.trim() ) {
+        return res.status( 400 ).json( { error: 'File path is required.' } );
+    }
     if ( !filePath.startsWith( currentDir ) ) {
         filePath = currentDir + '/' + filePath;
     }
