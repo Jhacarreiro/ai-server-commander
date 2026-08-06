@@ -1,4 +1,11 @@
+const crypto = require('crypto');
 const { validateAccessToken, protectedResourceMetadataUrl, expectedResource } = require('../api/oauth');
+
+function safeEqual(a, b) {
+    const left = Buffer.from(String(a ?? ''));
+    const right = Buffer.from(String(b ?? ''));
+    return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
 
 module.exports = (log, config) => ((req, res, next) => {
     const bearerHeader = req.headers['authorization'];
@@ -27,7 +34,13 @@ module.exports = (log, config) => ((req, res, next) => {
     if (req.path === '/mcp') {
         const queryToken = req.query && typeof req.query.token === 'string' ? req.query.token : undefined;
         const expectedMcpToken = config.mcpToken || config.authToken;
+        // Pre-shared MCP token: accept query (?token=) OR standard Authorization: Bearer.
+        // OAuth access tokens remain supported via validateAccessToken below.
         if (queryToken && queryToken === expectedMcpToken) {
+            next();
+            return;
+        }
+        if (bearerToken && safeEqual(bearerToken, expectedMcpToken)) {
             next();
             return;
         }
