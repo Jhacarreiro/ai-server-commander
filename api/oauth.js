@@ -11,6 +11,7 @@ const ACCESS_TOKEN_TTL_SECONDS = positiveInteger(process.env.OAUTH_ACCESS_TOKEN_
 const REFRESH_TOKEN_TTL_MS = positiveInteger(process.env.OAUTH_REFRESH_TOKEN_TTL_SECONDS, 30 * 24 * 3600) * 1000;
 const SUPPORTED_SCOPE = 'terminal';
 const MAX_OAUTH_CLIENTS = positiveInteger(process.env.MAX_OAUTH_CLIENTS, 200);
+const MAX_CLIENT_NAME_CHARS = positiveInteger(process.env.MAX_CLIENT_NAME_CHARS, 128);
 
 function baseUrl(config, req) {
     const configured = config.productionDomain || config.serverUrl;
@@ -154,7 +155,9 @@ function addOAuthRoutes(app, config) {
             response_types: ['code'],
             token_endpoint_auth_method: authMethod,
             scope,
-            client_name: body.client_name || 'AI Server Commander MCP client'
+            client_name: (typeof body.client_name === 'string' && body.client_name.trim()
+                ? body.client_name.trim().slice(0, MAX_CLIENT_NAME_CHARS)
+                : 'AI Server Commander MCP client')
         };
         store.setClient(storedClient);
         return sendJson(res, {
