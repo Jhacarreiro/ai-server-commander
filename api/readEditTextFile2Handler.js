@@ -171,7 +171,6 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         }
 
         if ( filePath.endsWith( '.js' ) ) {
-            debugger;
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
                 await fs.promises.writeFile( filePath, replaceResult.originalContent );
