@@ -21,14 +21,19 @@ const expandToFullLines = ( fileContent, startIndex, endIndex ) => {
 
 const parseConflicts = ( conflictText ) => {
   const conflicts = conflictText.match( conflictDelimiterRegex ) || [];
-  return conflicts.map( conflict => {
+  return conflicts.flatMap( conflict => {
     const parts = conflict.split( "=======" );
-    const originalText = parts[ 0 ].replace( /<<<<<<< HEAD\n/, "" );
-    const replacementText = parts[ 1 ].replace( /\n>>>>>>> [\w-]+/, "" );
-    return {
+    if (parts.length < 2) {
+      // Marker pair without separator — skip rather than throw on parts[1].replace
+      return [];
+    }
+    const originalText = parts[ 0 ].replace( /<<<<<<< HEAD\n?/, "" );
+    // Join remaining parts so content containing "=======" is preserved.
+    const replacementText = parts.slice(1).join("=======").replace( /\n?>>>>>>> [\w-]+\s*$/, "" );
+    return [{
       originalText,
       replacementText
-    };
+    }];
   } );
 };
 
