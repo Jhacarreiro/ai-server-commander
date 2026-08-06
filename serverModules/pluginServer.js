@@ -59,7 +59,7 @@ const htmlContent = marked.parse(data);
         if (res.headersSent) return next(err);
         console.error(err.stack || err.message);
         const status = err.type === 'entity.too.large' ? 413 : (err.status || 500);
-        const message = status === 413 ? 'Request body too large.' : 'Internal server error.';
+        const message = status === 413 ? 'Request body too large.' : status === 400 ? 'Invalid request body.' : 'Internal server error.';
         return res.status(status).json({ error: message });
     });
 
