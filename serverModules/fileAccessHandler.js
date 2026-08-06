@@ -5,6 +5,14 @@ const {log} = require("../serverModules/logger");
 const simpleGit = require("simple-git");
 
 const tokenStorePath = path.join(__dirname, "../tokenStore.json");
+const MAX_ACCESS_FILE_BYTES = Math.max(
+    1024,
+    Number.parseInt(process.env.MAX_ACCESS_FILE_BYTES || String(2 * 1024 * 1024), 10) || (2 * 1024 * 1024)
+);
+const MAX_TOKEN_STORE_ENTRIES = Math.max(
+    16,
+    Number.parseInt(process.env.MAX_TOKEN_STORE_ENTRIES || '500', 10) || 500
+);
 
 // Function to read the token store
 const readTokenStore = () => {
@@ -48,6 +56,15 @@ module.exports.createToken = (getURL, filePath) => {
             delete tokenStore[token];
         }
     });
+
+    // Cap store growth (oldest expiry first) so tokenStore.json cannot grow without bound.
+    const entries = Object.entries(tokenStore);
+    if (entries.length > MAX_TOKEN_STORE_ENTRIES) {
+        entries
+            .sort((a, b) => new Date(a[1].expiryDate) - new Date(b[1].expiryDate))
+            .slice(0, entries.length - MAX_TOKEN_STORE_ENTRIES)
+            .forEach(([tok]) => { delete tokenStore[tok]; });
+    }
 
     writeToTokenStore(tokenStore);
 
@@ -100,6 +117,21 @@ module.exports.retrieveFile = async (req, res) => {
             res.status(500).send('Error fetching Git diff: ' + error.message);
         }
     } else {
+        let st;
+        try {
+            st = fs.statSync(tokenInfo.filePath);
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        if (!st.isFile()) {
+            return res.status(400).send('Token target is not a regular file.');
+        }
+        if (st.size > MAX_ACCESS_FILE_BYTES) {
+            return res.status(413).send(
+                'File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').'
+            );
+        }
         fs.readFile(tokenInfo.filePath, 'utf8', (err, data) => {
             if (err) {
                 console.error(err);
