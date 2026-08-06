@@ -24,14 +24,16 @@ const path = require('node:path');
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
+    const readOnly = !replacements || replacements.length === 0;
 
     // Check if the file exists only when replacements are empty
-    if ( ( !replacements || replacements.length === 0 ) && !fs.existsSync( filePath ) ) {
+    if ( readOnly && !fs.existsSync( filePath ) ) {
         throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' ); // File does not exist and no replacements specified, so do nothing
     }
 
     try {
-        fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
+        // 'r' for pure reads (never creates files); 'a+' only when the caller intends to modify
+        fileHandle = await fs.promises.open( filePath, readOnly ? 'r' : 'a+' );
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
         log( 'Error reading or creating file:', err );
@@ -39,6 +41,14 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
 
+    if ( readOnly ) {
+        return {
+            updatedContent: fileContent,
+            unsuccessfulReplacements: [],
+            fuzzyReplacements: [],
+            originalContent: fileContent
+        };
+    }
 
     const result = await mergeText( fileContent, replacements );
 
@@ -140,9 +150,12 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    const resolvedPath = path.resolve( currentDir, filePath );
+    const workspaceRoot = path.resolve( currentDir );
+    if ( resolvedPath !== workspaceRoot && !resolvedPath.startsWith( workspaceRoot + path.sep ) ) {
+        return res.status( 400 ).send( 'File path is outside the workspace directory.' );
     }
+    filePath = resolvedPath;
 
     let replaceResult;
 

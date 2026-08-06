@@ -1,4 +1,11 @@
 const { validateAccessToken, protectedResourceMetadataUrl, expectedResource } = require('../api/oauth');
+const crypto = require('crypto');
+
+function safeEqual(a, b) {
+    const left = Buffer.from(String(a ?? ''));
+    const right = Buffer.from(String(b ?? ''));
+    return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
 
 module.exports = (log, config) => ((req, res, next) => {
     const bearerHeader = req.headers['authorization'];
@@ -27,7 +34,7 @@ module.exports = (log, config) => ((req, res, next) => {
     if (req.path === '/mcp') {
         const queryToken = req.query && typeof req.query.token === 'string' ? req.query.token : undefined;
         const expectedMcpToken = config.mcpToken || config.authToken;
-        if (queryToken && queryToken === expectedMcpToken) {
+        if (queryToken && safeEqual(queryToken, expectedMcpToken)) {
             next();
             return;
         }
@@ -41,7 +48,7 @@ module.exports = (log, config) => ((req, res, next) => {
     }
 
     if (typeof bearerHeader !== 'undefined') {
-        if (bearerToken === config.authToken) {
+        if (safeEqual(bearerToken, config.authToken)) {
             next();
         } else {
             res.sendStatus(403);
