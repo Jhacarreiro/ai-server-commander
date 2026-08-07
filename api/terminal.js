@@ -278,6 +278,13 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
 async function terminalHandler(req, res) {
     setCors(res);
     if (req.method === 'OPTIONS') return res.status(200).end();
+    // HEAD is routed to GET handlers by Express (RFC 9110 §9.2.1) and must be
+    // side-effect-free. Executing the command on HEAD would let curl -I /
+    // link-checkers / uptime monitors silently run terminal commands.
+    if (req.method === 'HEAD') {
+        res.setHeader('Allow', 'GET, POST');
+        return res.status(405).json({ message: 'Method not allowed. Please use GET or POST.' });
+    }
 
     const parsed = parseRequest(req);
     if (parsed.error) return res.status(parsed.status).json({ message: parsed.message });
