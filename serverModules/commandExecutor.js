@@ -15,10 +15,21 @@ const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
 
 const blockedCommandPatterns = [
-    /rm\s+-rf\s+\/(?:\s|$)/i,
+    // rm -rf targeting the filesystem root, in any form: --no-preserve-root
+    // defeats rm's own failsafe; glob/expansion suffixes (/*, /?, /$x) and
+    // command chaining (/; /&& /|) previously slipped past the (?:\s|$) anchor.
+    /\brm\b[^;\n|&]*?--no-preserve-root/i,
+    /\brm\s+-rf?\b[^;\n|&]*?\/\s*(?:[;&|]|$)/i,
+    /\brm\s+-rf?\b[^;\n|&]*?\/(?:[*?[]|\$)/i,
+    /\brm\s+--recursive\b[^;\n|&]*?--force\b[^;\n|&]*?\//i,
+    /\$\(\s*rm\b/,
+    /`\s*rm\b/,
     /\bmkfs(?:\.|\s|$)/i,
-    /\bdd\s+if=/i,
-    /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/,
+    // dd writing TO a device node (of=/dev/*) is destructive regardless of
+    // argument order; dd if=... of=regular-file stays allowed.
+    /\bdd\b[^;\n|&]*?of=\/dev\//i,
+    // fork bomb with any identifier (including the classic literal ':' form).
+    /[A-Za-z_:][A-Za-z0-9_]*\s*\(\s*\)\s*\{\s*[A-Za-z_:][A-Za-z0-9_]*\s*\|\s*[A-Za-z_:][A-Za-z0-9_]*\s*&\s*\}/,
     /\bshutdown\b/i,
     /\breboot\b/i,
     /\bpoweroff\b/i,
