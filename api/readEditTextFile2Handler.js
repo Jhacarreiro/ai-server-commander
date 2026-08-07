@@ -25,18 +25,26 @@ const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
 
-    // Check if the file exists only when replacements are empty
-    if ( ( !replacements || replacements.length === 0 ) && !fs.existsSync( filePath ) ) {
-        throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' ); // File does not exist and no replacements specified, so do nothing
-    }
-
-    try {
-        fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
-        fileContent = await fileHandle.readFile( 'utf8' );
-    } catch ( err ) {
-        log( 'Error reading or creating file:', err );
-    } finally {
-        if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
+    // If the file does not exist yet, the only valid outcome is a full
+    // creation via replacements that start from an empty originalText.
+    // Creating it with 'a+' up front and then failing to match any
+    // replacement leaves an empty file on disk that the 400 response
+    // claims was "reverted to original version" - there was no original.
+    if ( !fs.existsSync( filePath ) ) {
+        const canCreate = ( replacements || [] ).some( ( r ) => !r.originalText || String( r.originalText ).length === 0 );
+        if ( !canCreate ) {
+            throw new Error( 'File does not exist and no replacement starts from an empty originalText; ask for initial content and try again.' );
+        }
+        fileContent = '';
+    } else {
+        try {
+            fileHandle = await fs.promises.open( filePath, 'a+' );
+            fileContent = await fileHandle.readFile( 'utf8' );
+        } catch ( err ) {
+            log( 'Error reading file:', err );
+        } finally {
+            if ( fileHandle !== undefined ) await fileHandle.close();
+        }
     }
 
 
