@@ -173,6 +173,7 @@ class OAuthStore {
     }
 
     getRefreshToken(rawToken) {
+        this.pruneExpired();
         return this.data.refreshTokens[hashSecret(rawToken)] || null;
     }
 
