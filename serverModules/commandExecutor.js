@@ -43,6 +43,34 @@ function terminateEntry(entry, signal = 'SIGTERM') {
     }
 }
 
+// A single SIGTERM is not enough: a child that traps/ignores TERM (or a
+// defunct group member) would keep the request pending forever with no
+// escalation. Wait briefly, then SIGKILL the group.
+function escalateToKill(entry, graceMs = 1500) {
+    if (!entry || !entry.child || !entry.child.pid) return;
+    const target = () => {
+        try {
+            if (process.platform !== 'win32') process.kill(-entry.child.pid, 'SIGKILL');
+            else entry.child.kill('SIGKILL');
+        } catch {
+            try { entry.child.kill('SIGKILL'); } catch { /* already gone */ }
+        }
+    };
+    // If the process exited during the grace window, skip the kill.
+    const pid = entry.child.pid;
+    const probe = () => {
+        try {
+            if (process.platform !== 'win32') process.kill(pid, 0);
+            else return entry.child.exitCode === null;
+        } catch {
+            return false; // process gone
+        }
+        return true;
+    };
+    setTimeout(() => { if (probe()) target(); }, graceMs);
+    if (entry.timer) clearTimeout(entry.timer);
+}
+
 function sanitizeCwd(raw) {
     if (typeof raw !== 'string') return undefined;
     const trimmed = raw.trim();
@@ -125,6 +153,7 @@ function executeBounded(options) {
         entry.timer = setTimeout(() => {
             entry.timedOut = true;
             terminateEntry(entry);
+            escalateToKill(entry);
         }, effectiveTimeout);
         activeProcesses.set(activityId, entry);
     });
@@ -146,6 +175,7 @@ function interruptCommand(activityId) {
 
     entry.interrupted = true;
     terminateEntry(entry);
+    escalateToKill(entry);
     return { interrupted: true, activityId: targetId };
 }
 
