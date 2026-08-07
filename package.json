@@ -32,7 +32,6 @@
   "author": "Jo\u00e3o Carreiro",
   "license": "MIT",
   "dependencies": {
-    "diff": "^5.2.2",
     "espree": "^10.4.0",
     "express": "^4.22.2",
     "fastest-levenshtein": "^1.0.16",
@@ -53,5 +52,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.3"
   }
 }
