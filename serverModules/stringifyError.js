@@ -1,22 +1,28 @@
 function stringifyError(err) {
     if (!(err instanceof Error)) throw new TypeError("Only Error instances can be stringified");
 
+    // Client-facing payload: never include stack traces. Callers should log the
+    // full Error server-side before responding.
     const errorObject = {
         name: err.name,
-        message: err.message,
-        stack: err.stack,
+        message: sanitizeMessage(err.message),
     };
 
-    // Add any additional properties that are specific to the Error type
-    // or the environment (such as 'code' in Node.js errors)
-    if ('code' in err) {
+    if ("code" in err && (typeof err.code === "string" || typeof err.code === "number")) {
         errorObject.code = err.code;
     }
 
-    // Convert to a JSON string
     return JSON.stringify(errorObject, null, 2);
 }
 
-module.exports = {
-    stringifyError
+function sanitizeMessage(message) {
+    const text = String(message || "Error");
+    return text
+        .replace(/\/[\w.-]+(?:\/[\w.-]+)+/g, "[path]")
+        .replace(/[A-Za-z]:\\[\w.\\-]+/g, "[path]")
+        .slice(0, 300);
 }
+
+module.exports = {
+    stringifyError,
+};

@@ -221,6 +221,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         };
         // TODO no such dir fix
         // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\n', 'utf8' );
+        log( 'read-or-edit-file failed', error && error.stack ? error.stack : error );
         res.status( 500 ).json( {
             error: stringifyError( error )
         } );
