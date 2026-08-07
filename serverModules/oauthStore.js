@@ -137,6 +137,7 @@ class OAuthStore {
     }
 
     getAuthCode(rawCode) {
+        this.pruneExpired();
         return this.data.authCodes[hashSecret(rawCode)] || null;
     }
 
