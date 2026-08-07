@@ -19,7 +19,18 @@ function ensureRuntimeDir() { ensureDir(runtimeDir); ensureDir(activityRoot); en
 function redact(value) { return String(value || '').replace(SECRET_PATTERN, '[REDACTED]'); }
 function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw; const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? text.slice(0, max) + '…' : text; }
 function hashText(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12); }
-function safeId(value, fallback = 'unknown') { const raw = String(value || '').trim() || fallback; const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback; return safe.length < raw.length || safe !== raw ? `${safe}_${hashText(raw)}`.slice(0, 96) : safe; }
+function safeId(value, fallback = 'unknown') {
+    const raw = String(value || '').trim() || fallback;
+    // Drop path separators and lone . / .. so join(activityRoot, 'conversations', id)
+    // cannot climb out of the conversations/tasks trees.
+    let safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+    if (!safe || safe === '.' || safe === '..' || safe.includes('..')) {
+        safe = `${fallback}_${hashText(raw)}`.slice(0, 96);
+    } else if (safe.length < raw.length || safe !== raw) {
+        safe = `${safe}_${hashText(raw)}`.slice(0, 96);
+    }
+    return safe;
+}
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (err) { if (fs.existsSync(file)) console.error('[activityLog] unreadable state file, using default:', file, err && err.message ? err.message : err); return fallback; } }
 // Atomic tmp+rename+fsync: a torn write would otherwise silently wipe all
 // conversation mappings (readJson falls back to defaults with no error).
