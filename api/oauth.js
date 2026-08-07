@@ -96,7 +96,18 @@ function issueTokenPair(store, clientId, sourceRecord, oldRefreshToken = null, a
 }
 
 function addOAuthRoutes(app, config) {
-    const store = getOAuthStore(config);
+    // RFC 6749 §5.1 / OAuth Security BCP: token responses, the registration
+    // endpoint (returns one-time client_secret), and the authorize form must
+    // not be cached by shared intermediaries.
+    app.use((req, res, next) => {
+        if (req.path.startsWith('/oauth/') || req.path.startsWith('/.well-known/')) {
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Pragma', 'no-cache');
+        }
+        next();
+    });
+
+    const store  = getOAuthStore(config);
 
     const protectedResourceMetadata = (req, res) => {
         const base = baseUrl(config, req);
