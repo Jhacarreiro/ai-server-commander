@@ -27,8 +27,24 @@ const readTokenStore = () => {
 };
 
 // Function to write to the token store
+// Atomic tmp+rename+fsync: a torn write must not silently revoke every
+// outstanding share URL (bare writeFileSync can corrupt the file on crash).
 const writeToTokenStore = (tokenStore) => {
-    fs.writeFileSync(tokenStorePath, JSON.stringify(tokenStore, null, 2), "utf8");
+    const tmpPath = tokenStorePath + ".tmp-" + process.pid + "-" + Date.now();
+    const payload = JSON.stringify(tokenStore, null, 2);
+    let fd = null;
+    try {
+        fd = fs.openSync(tmpPath, "w", 0o600);
+        fs.writeFileSync(fd, payload, "utf8");
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = null;
+        fs.renameSync(tmpPath, tokenStorePath);
+        fs.chmodSync(tokenStorePath, 0o600);
+    } finally {
+        if (fd !== null) { try { fs.closeSync(fd); } catch {} }
+        try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    }
 };
 
 
