@@ -16,10 +16,14 @@ const MAX_TOKEN_STORE_ENTRIES = Math.max(
 
 // Function to read the token store
 const readTokenStore = () => {
-    if (fs.existsSync(tokenStorePath)) {
-        return JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+    if (!fs.existsSync(tokenStorePath)) return {};
+    try {
+        const parsed = JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (err) {
+        log("tokenStore.json unreadable; starting empty store:", err && err.message ? err.message : err);
+        return {};
     }
-    return {};
 };
 
 // Function to write to the token store
