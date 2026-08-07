@@ -22,25 +22,19 @@ const writeToTokenStore = (tokenStore) => {
 
 module.exports.createToken = (getURL, filePath) => {
     const tokenStore = readTokenStore();
-    let token = '';
-    let existingTokenFound = false;
 
-    // Check for an existing token for the filePath
+    // Rotate: revoke any prior token for this file and mint a fresh one.
+    // Reusing + sliding-extending the same token meant a captured share URL
+    // stayed valid indefinitely (every edit refreshed its 10-min TTL) and
+    // there was no way to invalidate a leaked link.
     Object.keys(tokenStore).forEach(existingToken => {
-        const tokenInfo = tokenStore[existingToken];
-        if (tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
-            // Extend the existing token's expiry date
-            tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
-            token = existingToken;
-            existingTokenFound = true;
+        if (tokenStore[existingToken].filePath === filePath) {
+            delete tokenStore[existingToken];
         }
     });
 
-    if (!existingTokenFound) {
-        // Create a new token if none exists for the filePath
-        token = crypto.randomBytes(20).toString('hex');
-        tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
-    }
+    const token = crypto.randomBytes(20).toString('hex');
+    tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
 
     // Filter out expired tokens
     Object.keys(tokenStore).forEach(token => {
