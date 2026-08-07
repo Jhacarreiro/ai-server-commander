@@ -57,6 +57,13 @@ const applyReplacements = async ( fileContent, replacements ) => {
       unsuccessfulReplacements.push("Search text (originalText) must be a string.");
       return;
     }
+    // null/undefined must not stringify to "null"/"undefined" in the file.
+    if (replacementText == null) {
+      replacementText = "";
+    } else if (typeof replacementText !== "string") {
+      unsuccessfulReplacements.push("Replacement text (replacementText) must be a string.");
+      return;
+    }
     // Initialize occurrences array
     let occurrences = [];
     let index = fileContent.indexOf( originalText );
