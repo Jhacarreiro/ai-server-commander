@@ -20,8 +20,27 @@ function redact(value) { return String(value || '').replace(SECRET_PATTERN, '[RE
 function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw; const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? text.slice(0, max) + '…' : text; }
 function hashText(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12); }
 function safeId(value, fallback = 'unknown') { const raw = String(value || '').trim() || fallback; const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback; return safe.length < raw.length || safe !== raw ? `${safe}_${hashText(raw)}`.slice(0, 96) : safe; }
-function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
-function writeJson(file, value) { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 }); }
+function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (err) { if (fs.existsSync(file)) console.error('[activityLog] unreadable state file, using default:', file, err && err.message ? err.message : err); return fallback; } }
+// Atomic tmp+rename+fsync: a torn write would otherwise silently wipe all
+// conversation mappings (readJson falls back to defaults with no error).
+function writeJson(file, value) {
+    ensureDir(path.dirname(file));
+    const tmpPath = file + '.tmp-' + process.pid + '-' + Date.now();
+    const payload = JSON.stringify(value, null, 2) + '\n';
+    let fd = null;
+    try {
+        fd = fs.openSync(tmpPath, 'w', 0o600);
+        fs.writeFileSync(fd, payload, 'utf8');
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = null;
+        fs.renameSync(tmpPath, file);
+        fs.chmodSync(file, 0o600);
+    } finally {
+        if (fd !== null) { try { fs.closeSync(fd); } catch {} }
+        try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    }
+}
 function loadContexts() { return readJson(contextsPath, { version: 1, conversations: {} }); }
 function saveContexts(contexts) { writeJson(contextsPath, contexts); }
 function pruneContexts(contexts) {
