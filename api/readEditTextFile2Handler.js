@@ -131,9 +131,20 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
     if ( req.method === 'GET' ) {
         filePath = req.query.filePath; // Get the file path from query parameters
-        body = {
-            filePath
-        }; // Mimic the structure expected by replaceTextInSection
+        // GET is a READ: return the file content as-is. It must not create
+        // the file, mint access tokens, or beautify-rewrite it (a read that
+        // permanently reformats the user's file destroys minified/custom
+        // formatting).
+        if ( !filePath ) return res.status(400).json({ error: 'filePath is required' });
+        const currentDirG = await getCurrentDirectory();
+        const resolvedG = filePath.startsWith( currentDirG ) ? filePath : currentDirG + '/' + filePath;
+        try {
+            const content = await fs.promises.readFile( resolvedG, 'utf8' );
+            res.type( 'text/plain' ).send( `File content:\n${content}` );
+        } catch ( err ) {
+            res.status(404).json({ error: 'File not found or unreadable.' });
+        }
+        return;
     } else if ( req.method === 'POST' ) {
         filePath = req.body.filePath; // Get the file path from request body
         body = req.body; // Use the full request body for POST requests
@@ -161,17 +172,19 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
+        // Mint ONE token and reuse it: createToken rotates (revokes the
+        // prior token for the file), so a second mint would invalidate the
+        // first URL in the very same response.
         const url = createToken( getURL, filePath );
         let responseMessage = `
         File url: ${url}
-        Changed diff url: ${createToken(getURL, filePath)}?diff=1`;
+        Changed diff url: ${url}?diff=1`;
 
         if ( replaceResult.fuzzyReplacements.length > 0 ) {
             responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
         }
 
         if ( filePath.endsWith( '.js' ) ) {
-            debugger;
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
                 await fs.promises.writeFile( filePath, replaceResult.originalContent );
