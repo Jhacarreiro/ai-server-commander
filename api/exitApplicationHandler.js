@@ -22,10 +22,17 @@
  *                   type: string
  *                   description: A message indicating that the application is restarting.
  */
+const { terminateAll } = require('../serverModules/commandExecutor');
+
 const exitApplicationHandler = (close) => (req, res) => {
   console.log('Exit request received. Shutting down.');
   res.json({ message: 'Exiting application...' });
-  setTimeout(() => close(), 100);
+  setTimeout(() => {
+    // Kill active terminal commands first: detached children would otherwise
+    // survive process.exit() and keep running unmanaged after the restart.
+    terminateAll();
+    close();
+  }, 100);
   setTimeout(() => process.exit(), 500);
 };
 

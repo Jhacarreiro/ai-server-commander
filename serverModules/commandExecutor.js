@@ -153,6 +153,17 @@ function getActiveCommandIds() {
     return Array.from(activeProcesses.keys());
 }
 
+// Kill every active command process group (SIGTERM then escalate to SIGKILL).
+// Used on server shutdown/restart: detached children would otherwise survive
+// process.exit() and keep running unmanaged.
+function terminateAll() {
+    const entries = Array.from(activeProcesses.values());
+    for (const entry of entries) {
+        terminateEntry(entry);
+        escalateToKill(entry, 800);
+    }
+}
+
 module.exports = {
     COMMAND_TIMEOUT_MS,
     MAX_CWD_BYTES,
@@ -164,6 +175,7 @@ module.exports = {
     findBlockedPattern,
     getActiveCommandIds,
     interruptCommand,
+    terminateAll,
     positiveInteger,
     resolveCwd,
     sanitizeCwd
