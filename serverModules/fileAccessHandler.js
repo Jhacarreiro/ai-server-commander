@@ -134,7 +134,7 @@ module.exports.retrieveFile = async (req, res) => {
             res.send(htmlDiff);
         } catch (error) {
             log('Error fetching Git diff:', error);
-            res.status(500).send('Error fetching Git diff: ' + error.message);
+            res.status(500).send('Error fetching Git diff.');
         }
     } else {
         let st;
