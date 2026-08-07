@@ -64,7 +64,17 @@ function pruneContexts(contexts) {
         return ta - tb;
     });
     const drop = keys.slice(0, keys.length - MAX_CONTEXTS);
-    for (const key of drop) delete conversations[key];
+    for (const key of drop) {
+        delete conversations[key];
+        // Remove the on-disk per-conversation/per-task directories too:
+        // without this the cap only trims contexts.json while the
+        // conversations/<key>/ + tasks/<key>/ dirs (activity.jsonl,
+        // rotated .1, status.json) accumulate forever, and every
+        // activityIndexHandler call stats each one.
+        for (const sub of ['conversations', 'tasks']) {
+            try { fs.rmSync(path.join(activityRoot, sub, key), { recursive: true, force: true }); } catch { /* best-effort */ }
+        }
+    }
     contexts.conversations = conversations;
     return contexts;
 }
