@@ -154,6 +154,7 @@ class OAuthStore {
     }
 
     getAccessToken(rawToken) {
+        this.pruneExpired();
         return this.data.accessTokens[hashSecret(rawToken)] || null;
     }
 
