@@ -146,7 +146,10 @@ module.exports = function createMcpHandler() {
         if (method === 'prompts/list') return jsonRpcResult(id, { prompts: [] });
 
         if (method === 'tools/call') {
-            if (!params || params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool');
+            if (!params || typeof params.name !== 'string' || !params.name.trim()) {
+                return jsonRpcError(id, -32602, 'tool name is required');
+            }
+            if (params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool: ' + params.name);
 
             const args = params.arguments && typeof params.arguments === 'object' ? { ...params.arguments } : {};
             if (!args.mode && typeof args.script === 'string') args.mode = 'script';

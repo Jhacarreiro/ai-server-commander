@@ -38,11 +38,24 @@ function parseRequest(req) {
     const command = req.method === 'GET' ? query.command : (body.command || query.command);
     const script = body.script;
 
-    if (mode === 'inline' && (typeof command !== 'string' || !command.trim())) {
-        return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+    if (mode === 'inline') {
+        if (typeof command === 'undefined' || command === null) {
+            return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+        }
+        if (typeof command !== 'string') {
+            return { error: true, status: 400, message: 'Command parameter must be a string, got ' + typeof command + '.' };
+        }
+        if (!command.trim()) {
+            return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+        }
     }
-    if (mode === 'script' && (typeof script !== 'string' || !script)) {
-        return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
+    if (mode === 'script') {
+        if (typeof script === 'undefined' || script === null || script === '') {
+            return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
+        }
+        if (typeof script !== 'string') {
+            return { error: true, status: 400, message: 'Script body must be a string, got ' + typeof script + '.' };
+        }
     }
     if (mode === 'script' && Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BODY_BYTES) {
         return { error: true, status: 413, message: 'Script body exceeds maximum of ' + MAX_SCRIPT_BODY_BYTES + ' bytes.' };
