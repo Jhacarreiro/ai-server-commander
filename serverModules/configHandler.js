@@ -6,7 +6,13 @@ const readline = require('readline/promises');
 const DEFAULT_CONFIG_PATH = path.resolve(process.env.CONFIG_FILE_PATH || './config.json');
 
 function normalizePort(value) {
-    const port = Number.parseInt(String(value), 10);
+    // Strict parse: reject "3000abc", floats, "1e3", hex, etc. parseInt would
+    // silently accept "3000abc" -> 3000 and "1e3" -> port 1.
+    const raw = String(value).trim();
+    if (!/^(?:[1-9]\d{0,4}|6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]?\d{1,4})$/.test(raw)) {
+        throw new Error('Configuration port must be an integer between 1 and 65535.');
+    }
+    const port = Number(raw);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
         throw new Error('Configuration port must be an integer between 1 and 65535.');
     }
