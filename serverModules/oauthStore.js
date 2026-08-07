@@ -63,6 +63,11 @@ class OAuthStore {
         this.statePath = path.resolve(statePath);
         this.now = now;
         this.data = this.load();
+        // Keys deleted/pruned in this instance's lifetime must not be
+        // resurrected by the persist() disk-merge (the pre-rename disk file
+        // still contains rotated-away tokens, so a blind union would undo
+        // revocations).
+        this._tombstones = new Set();
         this.pruneExpired();
     }
 
@@ -86,6 +91,27 @@ class OAuthStore {
         const directory = path.dirname(this.statePath);
         fs.mkdirSync(directory, { recursive: true });
         const temporaryPath = `${this.statePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+        // Merge the on-disk state into this snapshot before writing: two
+        // server instances sharing one state file otherwise lose each
+        // other's writes (last-writer-wins whole-file rewrite). Records
+        // written by the other instance since our last load are preserved;
+        // our in-memory values win for keys we hold.
+        try {
+            const diskData = this.load();
+            for (const section of ['authCodes', 'accessTokens', 'refreshTokens', 'clients']) {
+                const diskSection = diskData[section] || {};
+                const memSection = this.data[section] || {};
+                for (const [key, value] of Object.entries(diskSection)) {
+                    // Skip keys this instance deleted/pruned: the pre-rename
+                    // disk file still contains them, and a blind union would
+                    // resurrect rotated-away tokens and revocations.
+                    if (this._tombstones.has(`${section}:${key}`)) continue;
+                    if (!(key in memSection)) memSection[key] = value;
+                }
+            }
+        } catch {
+            // Unreadable/corrupt on-disk state: proceed with our snapshot.
+        }
         const payload = JSON.stringify({
             ...this.data,
             updatedAt: new Date(this.now()).toISOString()
@@ -119,12 +145,17 @@ class OAuthStore {
             for (const [key, record] of Object.entries(this.data[section])) {
                 if (!record || typeof record.expires_at !== 'number' || record.expires_at <= now) {
                     delete this.data[section][key];
+                    this._tombstone(section, key);
                     changed = true;
                 }
             }
         }
         if (changed) this.persist();
         return changed;
+    }
+
+    _tombstone(section, key) {
+        this._tombstones.add(`${section}:${key}`);
     }
 
     getClient(clientId) {
@@ -149,6 +180,7 @@ class OAuthStore {
         const key = hashSecret(rawCode);
         if (!this.data.authCodes[key]) return false;
         delete this.data.authCodes[key];
+        this._tombstone('authCodes', key);
         this.persist();
         return true;
     }
@@ -166,6 +198,7 @@ class OAuthStore {
         const key = hashSecret(rawToken);
         const existed = Boolean(this.data.accessTokens[key]);
         delete this.data.accessTokens[key];
+        this._tombstone('accessTokens', key);
         if (existed && persist) this.persist();
         return existed;
     }
@@ -183,6 +216,7 @@ class OAuthStore {
         const key = hashSecret(rawToken);
         const existed = Boolean(this.data.refreshTokens[key]);
         delete this.data.refreshTokens[key];
+        this._tombstone('refreshTokens', key);
         if (existed && persist) this.persist();
         return existed;
     }
@@ -194,7 +228,12 @@ class OAuthStore {
     }
 
     exchangeAuthorizationCode(rawCode, accessToken, accessRecord, refreshToken, refreshRecord) {
-        delete this.data.authCodes[hashSecret(rawCode)];
+        const codeKey = hashSecret(rawCode);
+        delete this.data.authCodes[codeKey];
+        // Single-use: without the tombstone the persist() disk-merge would
+        // resurrect the consumed code from the pre-rename file and allow
+        // replay.
+        this._tombstone('authCodes', codeKey);
         this.setAccessToken(accessToken, accessRecord, false);
         this.setRefreshToken(refreshToken, refreshRecord, false);
         this.persist();
@@ -215,10 +254,12 @@ class OAuthStore {
         const refresh = this.data.refreshTokens[refreshKey];
         if (access && access.client_id === clientId) {
             delete this.data.accessTokens[accessKey];
+            this._tombstone('accessTokens', accessKey);
             changed = true;
         }
         if (refresh && refresh.client_id === clientId) {
             delete this.data.refreshTokens[refreshKey];
+            this._tombstone('refreshTokens', refreshKey);
             changed = true;
         }
         if (changed) this.persist();
