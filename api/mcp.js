@@ -1,6 +1,8 @@
 const { executeCommand, parseRequest } = require('./terminal');
 const { getActivityContext } = require('./activityLog');
 
+const MCP_PROTOCOL_VERSION = '2025-03-26';
+
 function jsonRpcResult(id, result) {
     return { jsonrpc: '2.0', id, result };
 }
@@ -134,7 +136,7 @@ module.exports = function createMcpHandler() {
 
         if (method === 'initialize') {
             return jsonRpcResult(id, {
-                protocolVersion: params.protocolVersion || '2025-03-26',
+                protocolVersion: MCP_PROTOCOL_VERSION,
                 capabilities: { tools: {} },
                 serverInfo: { name: 'ai-server-commander', version: packageVersion },
                 instructions: 'This MCP server exposes bounded remote terminal execution on the configured host. Use run_terminal_command only with explicit user approval, show the exact command, and prefer short, verifiable commands. Multi-line scripts are supported with mode=script.'
@@ -185,6 +187,11 @@ module.exports = function createMcpHandler() {
 
         const body = req.body;
         if (!body) return res.status(400).json(jsonRpcError(null, -32700, 'Missing JSON body'));
+
+        if (Array.isArray(body) && body.length === 0) {
+            // JSON-RPC 2.0: an empty array is an invalid request.
+            return res.status(400).json(jsonRpcError(null, -32600, 'Invalid Request: empty batch'));
+        }
 
         const messages = Array.isArray(body) ? body : [body];
         const responses = [];
