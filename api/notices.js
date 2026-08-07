@@ -134,7 +134,15 @@ function ackNoticeHandler(req, res) {
     setCors(res);
     if (req.method === 'OPTIONS') return res.status(200).end();
     const notice = notices.find((item) => item.id === req.params.id && !item.ackedAt);
-    if (!notice) return res.status(404).json({ message: 'Notice not found.' });
+    if (!notice) {
+        // Already acked, expired, or evicted before the client could ack -
+        // treat as idempotent success so a delivered notice can never
+        // silently vanish into a 404.
+        if (evictedIds.has(req.params.id)) {
+            return res.status(200).json({ message: 'Notice acknowledged.', id: req.params.id });
+        }
+        return res.status(404).json({ message: 'Notice not found.' });
+    }
     const context = getActivityContext(req);
     notice.ackedAt = nowIso();
     appendActivity({ type: 'notice_acked', id: req.params.id, level: notice.level, source: notice.source, scope: notice.scope }, context);
