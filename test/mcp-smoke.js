@@ -169,6 +169,22 @@ function assert(condition, label, details = '') {
         const blockedStructured = response.body.result.structuredContent;
         assert(response.body.result.isError === true && blockedText.includes('blocked: true'), 'MCP enforces SAFE_MODE');
         assert(blockedStructured && blockedStructured.blocked === true && blockedStructured.exitCode === 126, 'MCP SAFE_MODE result remains structured');
+
+        // Oversized batch rejected with -32600; boundary batch still succeeds.
+        {
+            const big = Array.from({ length: 65 }, (_, i) => ({ jsonrpc: '2.0', id: 100 + i, method: 'initialize', params: {} }));
+            const bigResp = await rpc(big);
+            assert(bigResp.status === 400, 'expected 400 for oversized batch, got: ' + bigResp.status);
+            assert(bigResp.body && bigResp.body.error && bigResp.body.error.code === -32600, 'expected -32600 for oversized batch, got: ' + JSON.stringify(bigResp.body));
+            assert(/batch exceeds 64/.test(String(bigResp.body.error.message || '')), 'expected cap message, got: ' + bigResp.body.error.message);
+            console.log('PASS oversized MCP batch rejected with -32600');
+
+            const boundary = Array.from({ length: 64 }, (_, i) => ({ jsonrpc: '2.0', id: 200 + i, method: 'initialize', params: {} }));
+            const boundaryResp = await rpc(boundary);
+            assert(boundaryResp.status === 200, 'expected 200 for boundary batch, got: ' + boundaryResp.status);
+            assert(Array.isArray(boundaryResp.body) && boundaryResp.body.length === 64, 'expected 64 responses, got: ' + (Array.isArray(boundaryResp.body) && boundaryResp.body.length));
+            console.log('PASS boundary MCP batch (64 messages) succeeds');
+        }
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();
