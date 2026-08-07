@@ -80,15 +80,26 @@ async function createConfig({ configPath = DEFAULT_CONFIG_PATH, ask = defaultAsk
         throw new Error(`Configuration not found at ${configPath}. Copy config.example.json to config.json and replace every placeholder before starting the server.`);
     }
 
-    const portAnswer = String(await ask('Server port [3000]: ')).trim();
-    const productionDomainAnswer = String(await ask('Public HTTP(S) origin, for example https://commander.example.com: ')).trim();
-    const config = validateConfig({
-        port: portAnswer || 3000,
-        useLocalTunnel: false,
-        productionDomain: productionDomainAnswer,
-        authToken: crypto.randomBytes(32).toString('hex'),
-        mcpToken: crypto.randomBytes(32).toString('hex')
-    });
+    // Interactive wizard: re-prompt on invalid input instead of crashing with
+    // a raw stack trace. Empty input falls back to the shown default.
+    let config;
+    while (true) {
+        const portAnswer = String(await ask('Server port [3000]: ')).trim();
+        const productionDomainAnswer = String(await ask('Public HTTP(S) origin, for example https://commander.example.com: ')).trim();
+        try {
+            config = validateConfig({
+                port: portAnswer || 3000,
+                useLocalTunnel: false,
+                productionDomain: productionDomainAnswer,
+                authToken: crypto.randomBytes(32).toString('hex'),
+                mcpToken: crypto.randomBytes(32).toString('hex')
+            });
+            break;
+        } catch (error) {
+            console.error(`Invalid input: ${error && error.message ? error.message : error}`);
+            console.error('Please try again.');
+        }
+    }
     writeConfigFile(configPath, config);
     console.log(`Configuration saved to ${configPath}`);
     return config;
