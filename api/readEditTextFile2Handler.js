@@ -105,25 +105,19 @@ const replaceTextInSection = async ( filePath, replacements ) => {
  *                       description: Text to replace with
  *     responses:
  *       200:
- *         description: File modification was successful
+ *         description: File modification was successful. Response is a plain text summary message including access URL and current file content (not JSON).
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
- *               type: object
- *               properties:
- *                 content:
- *                   type: string
- *                   description: Updated file content and urls
+ *               type: string
+ *               description: Human-readable summary envelope ("File url: ... Changed diff url: ... File content: ...")
  *       400:
- *         description: There was an error in the text replacement
+ *         description: There was an error in the text replacement. Response is a plain text error message.
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Details of the error along with file current content and access url
+ *               type: string
+ *               description: Error message with failure context
  */
 const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     let filePath;
