@@ -63,8 +63,8 @@ const htmlContent = marked.parse(data);
         return res.status(status).json({ error: message });
     });
 
-    server.listen(config.port, () => {
-        log('Server running on http://localhost:' + config.port);
+    server.listen(config.port, config.host, () => {
+        log('Server running on http://' + config.host + ':' + config.port);
         setURL(serverUrl);
     });
     return server;

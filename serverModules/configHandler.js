@@ -13,6 +13,14 @@ function normalizePort(value) {
     return port;
 }
 
+function normalizeHost(value) {
+    const raw = String(value == null ? '127.0.0.1' : value).trim();
+    if (!raw || raw.length > 255 || /[\x00-\x1f\s]/.test(raw)) {
+        throw new Error('host must be a hostname or IP address.');
+    }
+    return raw;
+}
+
 function normalizeProductionDomain(value) {
     const raw = String(value || '').trim().replace(/\/$/, '');
     let parsed;
@@ -47,6 +55,7 @@ function validateConfig(input) {
     return {
         ...input,
         port: normalizePort(input.port),
+        host: normalizeHost(input.host),
         useLocalTunnel: false,
         localTunnelSubdomain: null,
         productionDomain: normalizeProductionDomain(input.productionDomain),
