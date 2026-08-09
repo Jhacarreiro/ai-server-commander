@@ -4,9 +4,9 @@
 [![Release](https://img.shields.io/github/v/release/Jhacarreiro/ai-server-commander)](https://github.com/Jhacarreiro/ai-server-commander/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-AI Server Commander is a self-hosted bridge that lets approved AI assistant clients run bounded terminal commands on a machine you control.
+AI Server Commander is a self-hosted bridge that lets approved AI assistant clients run bounded terminal commands on a machine you control. OpenAI/ChatGPT and Anthropic/Claude are first-class client families; additional clients and protocols are welcome when they do not compromise functionality, reliability, or performance for those two.
 
-It exposes the same execution core through two client adapters:
+It exposes the same execution core through two primary client adapters:
 
 - **REST/OpenAPI** for ChatGPT Custom GPT Actions and automation clients.
 - **Remote MCP + OAuth** for Claude and other MCP-capable clients.
