@@ -29,7 +29,11 @@ module.exports = (log, config) => ((req, res, next) => {
         return;
     }
 
-    const bearerToken = typeof bearerHeader !== 'undefined' ? bearerHeader.split(' ')[1] : undefined;
+    const authParts = typeof bearerHeader === 'string' ? bearerHeader.split(' ') : [];
+    const authScheme = authParts[0];
+    const bearerToken = authParts[1];
+    // RFC 7235: authentication schemes are case-insensitive.
+    const isBearerScheme = typeof authScheme === 'string' && authScheme.toLowerCase() === 'bearer';
 
     if (req.path === '/mcp') {
         const queryToken = req.query && typeof req.query.token === 'string' ? req.query.token : undefined;
@@ -40,7 +44,7 @@ module.exports = (log, config) => ((req, res, next) => {
             next();
             return;
         }
-        if (bearerToken && safeEqual(bearerToken, expectedMcpToken)) {
+        if (isBearerScheme && bearerToken && safeEqual(bearerToken, expectedMcpToken)) {
             next();
             return;
         }
