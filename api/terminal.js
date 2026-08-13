@@ -35,7 +35,7 @@ function parseRequest(req) {
         else return { error: true, status: 400, message: 'Unknown mode: ' + body.mode + '. Supported: inline, script.' };
     }
 
-    const command = req.method === 'GET' ? query.command : (body.command || query.command);
+    const command = req.method === 'GET' ? query.command : (body.command !== undefined ? body.command : query.command);
     const script = body.script;
 
     if (mode === 'inline') {
