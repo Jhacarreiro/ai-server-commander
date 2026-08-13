@@ -105,6 +105,18 @@ function assert(condition, label, details = '') {
 
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'sleep 3', timeoutMs: 500 });
     assert(r.status === 200 && r.body.timedOut === true, 'timeout returns timedOut true', JSON.stringify(r.body));
+
+    const noticeOkPrefix = 'routes-smoke-notice-ok-';
+    r = await request('POST', '/api/notices', { text: noticeOkPrefix + 'x'.repeat(8192 - noticeOkPrefix.length) });
+    if (r.body && typeof r.body === 'object' && r.body.message) {
+      assert((r.status === 200 || r.status === 201) && String(r.body.message).length > 0, 'notice text at 8192 is accepted', JSON.stringify(r.body));
+    } else {
+      assert(r.status === 200 || r.status === 201, 'notice text at 8192 is accepted', String(r.status));
+    }
+
+    const noticeOverPrefix = 'routes-smoke-notice-over-';
+    r = await request('POST', '/api/notices', { text: noticeOverPrefix + 'x'.repeat(8193 - noticeOverPrefix.length) });
+    assert(r.status === 400 && r.body && String(r.body.message || '').includes('8192'), 'notice text over 8192 is rejected', JSON.stringify(r.body));
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
