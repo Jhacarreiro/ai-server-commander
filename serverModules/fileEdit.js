@@ -24,8 +24,8 @@ const parseConflicts = ( conflictText ) => {
   return conflicts.flatMap( conflict => {
     const parts = conflict.split( "=======" );
     if (parts.length < 2) {
-      // Marker pair without separator — skip rather than throw on parts[1].replace
-      return [];
+      const excerpt = conflict.length > 80 ? conflict.slice(0, 80) + "..." : conflict;
+      throw new Error("Malformed conflict block: expected a ======= separator between original and replacement text. Offending block: " + excerpt);
     }
     const originalText = parts[ 0 ].replace( /<<<<<<< HEAD\n?/, "" );
     // Join remaining parts so content containing "=======" is preserved.
@@ -57,9 +57,10 @@ const applyReplacements = async ( fileContent, replacements ) => {
       unsuccessfulReplacements.push("Search text (originalText) must be a string.");
       return;
     }
-    // null/undefined must not stringify to "null"/"undefined" in the file.
+    // Nullish replacement is not an implicit delete; require an explicit empty string.
     if (replacementText == null) {
-      replacementText = "";
+      unsuccessfulReplacements.push("Replacement text (replacementText) must be a string; use an empty string to explicitly delete matched text.");
+      return;
     } else if (typeof replacementText !== "string") {
       unsuccessfulReplacements.push("Replacement text (replacementText) must be a string.");
       return;
