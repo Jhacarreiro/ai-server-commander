@@ -89,7 +89,9 @@ function executeBounded(options) {
             return;
         }
         if (activeProcesses.size >= MAX_CONCURRENT_COMMANDS) {
-            reject(new Error(`Too many concurrent commands (max ${MAX_CONCURRENT_COMMANDS}). Interrupt one or wait for completion.`));
+            const err = new Error(`Too many concurrent commands (max ${MAX_CONCURRENT_COMMANDS}). Interrupt one or wait for completion.`);
+            err.code = 'TOO_MANY_CONCURRENT_COMMANDS';
+            reject(err);
             return;
         }
 

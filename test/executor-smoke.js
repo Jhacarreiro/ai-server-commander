@@ -1,3 +1,5 @@
+const { spawnSync } = require('child_process');
+const path = require('path');
 const { executeBounded, parseRequest } = require('../api/terminal');
 const { getActiveCommandIds, interruptCommand } = require('../serverModules/commandExecutor');
 
@@ -40,6 +42,47 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     assert(interruptCommand('test_second').interrupted, 'interrupt second command by id');
     const [firstResult, secondResult] = await Promise.all([first, second]);
     assert(firstResult.interrupted && secondResult.interrupted, 'interruption state preserved per command');
+
+    const repoRoot = path.join(__dirname, '..');
+    const childScript = [
+        "const { executeBounded } = require('./serverModules/commandExecutor');",
+        "const { executeCommand, parseRequest } = require('./api/terminal');",
+        "function assert(cond, label, details) {",
+        "    if (!cond) throw new Error(label + (details ? ': ' + details : ''));",
+        "    console.log('PASS ' + label);",
+        "}",
+        "(async () => {",
+        "    const first = executeBounded({ command: 'sleep 2', cwd: process.cwd(), timeoutMs: 5000, shell: '/bin/sh' });",
+        "    first.catch(() => {});",
+        "    let capErr = null;",
+        "    try {",
+        "        await executeBounded({ command: 'sleep 2', cwd: process.cwd(), timeoutMs: 5000, shell: '/bin/sh' });",
+        "    } catch (err) {",
+        "        capErr = err;",
+        "    }",
+        "    assert(capErr && capErr.code === 'TOO_MANY_CONCURRENT_COMMANDS', 'executeBounded cap rejection has code', capErr && capErr.code);",
+        "    assert(capErr && String(capErr.message).includes('max 1'), 'executeBounded cap rejection mentions max 1', capErr && capErr.message);",
+        "    await first;",
+        "    const parsed = parseRequest({ method: 'POST', body: { command: 'sleep 2' }, query: {} });",
+        "    const firstCmd = executeCommand(parsed);",
+        "    firstCmd.catch(() => {});",
+        "    await new Promise((resolve) => setTimeout(resolve, 150));",
+        "    const secondCmd = await executeCommand(parsed);",
+        "    assert(secondCmd.status === 429, 'executeCommand returns 429 at cap', JSON.stringify(secondCmd));",
+        "    assert(secondCmd.result && String(secondCmd.result.message).includes('Too many concurrent commands'), 'executeCommand 429 message', secondCmd.result && secondCmd.result.message);",
+        "    await firstCmd;",
+        "})().catch((err) => {",
+        "    console.error(err.stack || err.message);",
+        "    process.exit(1);",
+        "});"
+    ].join('\n');
+    const child = spawnSync(process.execPath, ['-e', childScript], {
+        cwd: repoRoot,
+        env: Object.assign({}, process.env, { MAX_CONCURRENT_COMMANDS: '1' }),
+        encoding: 'utf8',
+        timeout: 20000
+    });
+    assert(child.status === 0, 'concurrent cap rejection exposed to clients', (child.stderr || '') + '\n' + (child.stdout || ''));
 })().catch((err) => {
     console.error(err.stack || err.message);
     process.exit(1);
