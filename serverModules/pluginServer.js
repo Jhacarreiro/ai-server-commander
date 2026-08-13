@@ -23,7 +23,7 @@ module.exports = async () => {
     });
     const expressApp = express();
     const server = http.createServer(expressApp);
-    expressApp.use(express.json({ limit: MAX_SCRIPT_BODY_BYTES }));
+    expressApp.use(express.json({ limit: MAX_SCRIPT_BODY_BYTES, strict: false }));
     expressApp.use(express.urlencoded({ extended: false, limit: MAX_SCRIPT_BODY_BYTES }));
 
     log('serving static from', path.join(__dirname, '..', 'public'));
@@ -54,14 +54,6 @@ const htmlContent = marked.parse(data);
 
     const serverUrl = config.productionDomain;
     addApi(expressApp, config, () => serverUrl, () => {});
-
-    // Express 4 does not forward async-handler rejections to the error
-    // middleware: an uncaught rejection used to crash the whole process
-    // (e.g. a malformed body on /api/read-or-edit-file). Log and continue
-    // so a single bad request can never take the server down again.
-    process.on('unhandledRejection', (reason, promise) => {
-        console.error('[unhandledRejection]', reason instanceof Error ? (reason.stack || reason.message) : reason, '| promise:', promise);
-    });
 
     expressApp.use((err, req, res, next) => {
         if (res.headersSent) return next(err);

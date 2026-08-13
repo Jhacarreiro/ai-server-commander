@@ -135,8 +135,8 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             filePath
         }; // Mimic the structure expected by replaceTextInSection
     } else if ( req.method === 'POST' ) {
-        filePath = req.body.filePath; // Get the file path from request body
-        body = req.body; // Use the full request body for POST requests
+        body = (typeof req.body === 'object' && req.body !== null) ? req.body : {};
+        filePath = body.filePath;
     }
 
     const currentDir = await getCurrentDirectory();
