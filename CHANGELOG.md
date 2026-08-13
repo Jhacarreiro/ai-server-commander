@@ -6,7 +6,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Changed
+
+- Activity `/api/activity` and `/api/activity/status` responses no longer expose absolute host `logPath`/`statusPath`.
+- `MAX_ACTIVITY_CONTEXTS` is now enforced on all activity writes (terminal, notices, and context registration), not just context registration.
 
 ## [1.0.8] - 2026-07-12
 

@@ -65,14 +65,15 @@ function pruneContexts(contexts) {
     });
     const drop = keys.slice(0, keys.length - MAX_CONTEXTS);
     for (const key of drop) {
+        const dropped = conversations[key];
         delete conversations[key];
-        // Remove the on-disk per-conversation/per-task directories too:
-        // without this the cap only trims contexts.json while the
-        // conversations/<key>/ + tasks/<key>/ dirs (activity.jsonl,
-        // rotated .1, status.json) accumulate forever, and every
-        // activityIndexHandler call stats each one.
-        for (const sub of ['conversations', 'tasks']) {
-            try { fs.rmSync(path.join(activityRoot, sub, key), { recursive: true, force: true }); } catch { /* best-effort */ }
+        // Conversation dirs are keyed by conversationKey. Task dirs are
+        // keyed by the independent taskKey — only remove a task dir when
+        // no remaining conversation still references it.
+        try { fs.rmSync(path.join(activityRoot, 'conversations', key), { recursive: true, force: true }); } catch { /* best-effort */ }
+        const taskKey = dropped && dropped.taskKey;
+        if (taskKey && !Object.values(conversations).some((record) => record && record.taskKey === taskKey)) {
+            try { fs.rmSync(path.join(activityRoot, 'tasks', taskKey), { recursive: true, force: true }); } catch { /* best-effort */ }
         }
     }
     contexts.conversations = conversations;
@@ -118,7 +119,15 @@ function appendActivity(event, context = null) {
     try {
         ensureRuntimeDir();
         const safe = { ts: new Date().toISOString(), conversationId: context?.conversationId || 'unknown', conversationKey: context?.conversationKey || 'unknown', taskId: context?.taskId || 'default', taskKey: context?.taskKey || 'default', ...(context?.taskTitle ? { taskTitle: context.taskTitle } : {}), ...event };
-        for (const p of eventPaths(context || safe)) { ensureDir(path.dirname(p.log)); rotateLogIfNeeded(p.log); fs.appendFileSync(p.log, JSON.stringify(safe) + '\n', { mode: 0o600 }); fs.writeFileSync(p.status, JSON.stringify(safe, null, 2) + '\n', { mode: 0o600 }); }
+        if (context && context.conversationKey) {
+            const contexts = loadContexts();
+            contexts.version = 1;
+            contexts.conversations = contexts.conversations || {};
+            contexts.conversations[context.conversationKey] = { conversationId: context.conversationId, conversationKey: context.conversationKey, taskId: context.taskId, taskKey: context.taskKey, taskTitle: context.taskTitle, updatedAt: new Date().toISOString() };
+            pruneContexts(contexts);
+            saveContexts(contexts);
+        }
+        for (const p of eventPaths(context || safe)) { ensureDir(path.dirname(p.log)); rotateLogIfNeeded(p.log); fs.appendFileSync(p.log, JSON.stringify(safe) + '\n', { mode: 0o600 }); writeJson(p.status, safe); }
     } catch (error) { console.error('[activity-log] failed', error && error.message ? error.message : error); }
 }
 
