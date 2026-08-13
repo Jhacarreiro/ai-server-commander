@@ -93,6 +93,9 @@ function assert(condition, label, details = '') {
     r = await request('POST', '/v1/commands/execute', { mode: 'script', script: 'echo line1\necho line2', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.output.includes('line1') && r.body.output.includes('line2') && r.body.mode === 'script', 'POST script command');
 
+    r = await request('POST', '/api/runTerminalScript', { script: 'printf script_autodetect', timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.output === 'script_autodetect' && r.body.mode === 'script', 'POST script-only body auto-detects script mode', JSON.stringify(r.body));
+
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'exit 42', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.exitCode === 42, 'exit code preserved', JSON.stringify(r.body));
 

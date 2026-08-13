@@ -149,7 +149,7 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
-| `SHELL` | `/bin/bash` | Shell used for inline execution and as script-mode fallback. Falls back to `/bin/bash` when unset. |
+| `SHELL` | `/bin/bash` | Shell used for inline execution and as script-mode fallback. Falls back to `/bin/bash` when unset (`/bin/sh` if Bash is not installed). |
 | `NODE_ENV` | unset | Standard Node environment label. |
 
 See [.env.example](./.env.example). The application does not automatically load `.env`; set variables through your shell, process manager or service unit.

@@ -13,7 +13,7 @@ const MAX_SCRIPT_BODY_BYTES = positiveInteger(process.env.MAX_SCRIPT_BODY_BYTES,
 const MAX_CWD_BYTES = 1024;
 const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
-const DEFAULT_SHELL = process.env.SHELL || '/bin/bash';
+const DEFAULT_SHELL = process.env.SHELL || (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh');
 
 const blockedCommandPatterns = [
     /rm\s+-rf\s+\/(?:\s|$)/i,
