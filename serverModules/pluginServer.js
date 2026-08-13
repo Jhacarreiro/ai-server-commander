@@ -33,8 +33,11 @@ module.exports = async () => {
 // must run BEFORE the auth middleware; otherwise every browser call to /api/*
 // dies on a 401 preflight (the handler-level setCors/OPTIONS branches are
 // unreachable because Express auto-answers OPTIONS without invoking handlers).
+// Only actual preflights (Origin + Access-Control-Request-Method present) are
+// answered here; any other OPTIONS request falls through so auth and Express's
+// automatic Allow handling keep their previous behavior.
 expressApp.use((req, res, next) => {
-    if (req.method !== 'OPTIONS') return next();
+    if (req.method !== 'OPTIONS' || !req.headers.origin || !req.headers['access-control-request-method']) return next();
     res.setHeader('Access-Control-Allow-Origin', 'https://chat.openai.com');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, openai-conversation-id, openai-ephemeral-user-id, x-conversation-id');
