@@ -35,7 +35,11 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         fileHandle = await fs.promises.open( filePath, 'r+' ); // read-write; never creates files
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
-        log( 'Error reading or creating file:', err );
+        log( 'Error reading file:', err );
+        // Propagate the failure: if the open fails (e.g. the file disappeared
+        // between the existsSync check and the open), continuing with an empty
+        // buffer would let the later write recreate or truncate the file.
+        throw err;
     } finally {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
@@ -230,3 +234,4 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 };
 
 module.exports = readEditTextFileHandler;
+module.exports.replaceTextInSection = replaceTextInSection;
