@@ -93,17 +93,25 @@ function mockRes() {
 
     // --- 4. Placeholder secrets must be rejected ---------------------------
     const { validateConfig } = require('../serverModules/configHandler');
-    let threw = false;
-    try {
-      validateConfig({ port: 3000, productionDomain: 'http://localhost:3000', authToken: 'replace-with-a-long-random-secret' });
-    } catch (err) { threw = true; }
-    assert(threw, 'validateConfig rejects the authToken placeholder secret');
+    const placeholderTokens = [
+      'replace-me',
+      'replace-me-too',
+      'replace-with-a-long-random-secret',
+      'replace-with-a-separate-long-random-secret'
+    ];
+    for (const placeholder of placeholderTokens) {
+      let threw = false;
+      try {
+        validateConfig({ port: 3000, productionDomain: 'http://localhost:3000', authToken: placeholder });
+      } catch (err) { threw = true; }
+      assert(threw, `validateConfig rejects the documented authToken placeholder ${placeholder}`);
 
-    threw = false;
-    try {
-      validateConfig({ port: 3000, productionDomain: 'http://localhost:3000', authToken: 't'.repeat(64), mcpToken: 'replace-with-a-separate-long-random-secret' });
-    } catch (err) { threw = true; }
-    assert(threw, 'validateConfig rejects the mcpToken placeholder secret');
+      threw = false;
+      try {
+        validateConfig({ port: 3000, productionDomain: 'http://localhost:3000', authToken: 't'.repeat(64), mcpToken: placeholder });
+      } catch (err) { threw = true; }
+      assert(threw, `validateConfig rejects the documented mcpToken placeholder ${placeholder}`);
+    }
 
     console.log('ALL read-edit smoke tests passed');
   } finally {
