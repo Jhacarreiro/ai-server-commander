@@ -21,6 +21,30 @@ const {
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
 
+// Resolve symlinks so a link inside the workspace cannot point at files
+// outside it. When the target does not exist yet (POST may create it),
+// resolve the deepest existing ancestor and re-append the missing tail
+// lexically; fall back to the lexical path if that also fails.
+const resolveRealPath = ( target ) => {
+    try {
+        return fs.realpathSync( target );
+    } catch {
+        let probe = path.dirname( target );
+        const tail = [ path.basename( target ) ];
+        while ( !fs.existsSync( probe ) ) {
+            const parent = path.dirname( probe );
+            if ( parent === probe ) break;
+            tail.unshift( path.basename( probe ) );
+            probe = parent;
+        }
+        try {
+            return path.join( fs.realpathSync( probe ), ...tail );
+        } catch {
+            return target;
+        }
+    }
+};
+
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
@@ -155,7 +179,28 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     if ( resolvedPath !== workspaceRoot && !resolvedPath.startsWith( workspaceRoot + path.sep ) ) {
         return res.status( 400 ).send( 'File path is outside the workspace directory.' );
     }
-    filePath = resolvedPath;
+
+    // Re-check the boundary against symlink-resolved paths so a link inside
+    // the workspace cannot reach files outside it (reads and writes).
+    const resolvedWorkspace = resolveRealPath( workspaceRoot );
+    const resolvedFile = resolveRealPath( resolvedPath );
+    if ( resolvedFile !== resolvedWorkspace && !resolvedFile.startsWith( resolvedWorkspace + path.sep ) ) {
+        return res.status( 400 ).send( 'File path is outside the workspace directory.' );
+    }
+    filePath = resolvedFile;
+
+    // GET is a pure read: return the raw file content without minting access
+    // tokens, syntax checking, beautifying, or writing anything.
+    if ( req.method === 'GET' ) {
+        let content;
+        try {
+            content = await fs.promises.readFile( filePath, 'utf8' );
+        } catch ( error ) {
+            console.error( error );
+            return res.status( 400 ).send( `Error reading the file: ${error.message}` );
+        }
+        return res.type( 'text/plain' ).send( content );
+    }
 
     let replaceResult;
 
