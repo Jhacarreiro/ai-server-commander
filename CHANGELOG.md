@@ -6,7 +6,13 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Removed
+
+- Removed the unregistered `api/sentenceVector.js` and `api/transformers.js` modules and the unused `initDB` import from `apiRoutes.js`. Firebase initialization remains in `pluginServer.js`. This deletion supersedes in-place edits to those two files in the overlapping cleanup PR #7; rebase #7 and drop those file changes.
+
+### Added
+
+- Added smoke coverage that the dead modules stay deleted and that post-change server startup plus registered routes still work.
 
 ## [1.0.8] - 2026-07-12
 
