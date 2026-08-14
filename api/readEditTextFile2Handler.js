@@ -21,6 +21,21 @@ const {
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
 
+// Reject non-strings before any string method (Express represents repeated
+// query parameters as an array). Resolve and bound-check so ../ traversal
+// and sibling-prefix paths cannot escape the workspace.
+const resolveWorkspaceFilePath = ( filePath, currentDir ) => {
+    if ( typeof filePath !== 'string' || filePath.length === 0 ) {
+        return { error: 'filePath is required', status: 400 };
+    }
+    const workspaceRoot = path.resolve( currentDir );
+    const resolvedPath = path.resolve( workspaceRoot, filePath );
+    if ( resolvedPath !== workspaceRoot && !resolvedPath.startsWith( workspaceRoot + path.sep ) ) {
+        return { error: 'File path is outside the workspace directory.', status: 400 };
+    }
+    return { filePath: resolvedPath };
+};
+
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
@@ -131,28 +146,30 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
     if ( req.method === 'GET' ) {
         filePath = req.query.filePath; // Get the file path from query parameters
-        // GET is a READ: return the file content as-is. It must not create
-        // the file, mint access tokens, or beautify-rewrite it (a read that
-        // permanently reformats the user's file destroys minified/custom
-        // formatting).
-        if ( !filePath ) return res.status(400).json({ error: 'filePath is required' });
-        const currentDirG = await getCurrentDirectory();
-        const resolvedG = filePath.startsWith( currentDirG ) ? filePath : currentDirG + '/' + filePath;
-        try {
-            const content = await fs.promises.readFile( resolvedG, 'utf8' );
-            res.type( 'text/plain' ).send( `File content:\n${content}` );
-        } catch ( err ) {
-            res.status(404).json({ error: 'File not found or unreadable.' });
-        }
-        return;
     } else if ( req.method === 'POST' ) {
         filePath = req.body.filePath; // Get the file path from request body
         body = req.body; // Use the full request body for POST requests
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    const resolved = resolveWorkspaceFilePath( filePath, currentDir );
+    if ( resolved.error ) {
+        return res.status( resolved.status ).json( { error: resolved.error } );
+    }
+    filePath = resolved.filePath;
+
+    if ( req.method === 'GET' ) {
+        // GET is a READ: return the file content as-is. It must not create
+        // the file, mint access tokens, or beautify-rewrite it (a read that
+        // permanently reformats the user's file destroys minified/custom
+        // formatting).
+        try {
+            const content = await fs.promises.readFile( filePath, 'utf8' );
+            res.type( 'text/plain' ).send( `File content:\n${content}` );
+        } catch ( err ) {
+            res.status(404).json({ error: 'File not found or unreadable.' });
+        }
+        return;
     }
 
     let replaceResult;
