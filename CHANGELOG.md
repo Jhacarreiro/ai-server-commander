@@ -6,7 +6,18 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Changed
+
+- The listen address is now taken from required `host` in `config.json`. Configurations that omit `host` fail with migration guidance instead of binding all interfaces. New setup writes `host: "127.0.0.1"`.
+- Documented the hostless-config upgrade path in the README and deployment guide.
+
+### Fixed
+
+- Startup listen URLs wrap IPv6 literals so `::1` logs as `http://[::1]:3000`.
+
+### Tests
+
+- Added host-required, IPv6 listen-URL and live bind/request coverage.
 
 ## [1.0.8] - 2026-07-12
 

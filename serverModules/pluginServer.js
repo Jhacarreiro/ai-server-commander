@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketSetup = require('./socketSetup');
-const { configPromise } = require('./configHandler');
+const { configPromise, formatListenUrl } = require('./configHandler');
 const { openapiSpecification, setURL } = require('./swaggerSetup');
 const {addApi} = require("./apiRoutes");
 const {log, getLog} = require("./logger");
@@ -64,7 +64,7 @@ const htmlContent = marked.parse(data);
     });
 
     server.listen(config.port, config.host, () => {
-        log('Server running on http://' + config.host + ':' + config.port);
+        log('Server running on ' + formatListenUrl(config.host, config.port));
         setURL(serverUrl);
     });
     return server;

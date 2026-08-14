@@ -14,11 +14,22 @@ function normalizePort(value) {
 }
 
 function normalizeHost(value) {
-    const raw = String(value == null ? '127.0.0.1' : value).trim();
-    if (!raw || raw.length > 255 || /[\x00-\x1f\s]/.test(raw)) {
+    if (value == null || String(value).trim() === '') {
+        throw new Error('host is required. Configurations that omitted host previously bound all interfaces. Set host to "127.0.0.1" for loopback (recommended behind a reverse proxy) or "0.0.0.0" / "::" to listen on all interfaces.');
+    }
+    const raw = String(value).trim();
+    if (raw.length > 255 || /[\x00-\x1f\s]/.test(raw)) {
         throw new Error('host must be a hostname or IP address.');
     }
     return raw;
+}
+
+function formatListenUrl(host, port, protocol = 'http') {
+    const hostname = String(host);
+    const hostPart = hostname.includes(':') && !hostname.startsWith('[')
+        ? `[${hostname}]`
+        : hostname;
+    return `${protocol}://${hostPart}:${port}`;
 }
 
 function normalizeProductionDomain(value) {
@@ -93,6 +104,7 @@ async function createConfig({ configPath = DEFAULT_CONFIG_PATH, ask = defaultAsk
     const productionDomainAnswer = String(await ask('Public HTTP(S) origin, for example https://commander.example.com: ')).trim();
     const config = validateConfig({
         port: portAnswer || 3000,
+        host: '127.0.0.1',
         useLocalTunnel: false,
         productionDomain: productionDomainAnswer,
         authToken: crypto.randomBytes(32).toString('hex'),
@@ -120,6 +132,7 @@ const configPromise = loadOrCreateConfig().catch((error) => {
 module.exports = {
     configPromise,
     createConfig,
+    formatListenUrl,
     loadConfigFile,
     loadOrCreateConfig,
     normalizePort,
