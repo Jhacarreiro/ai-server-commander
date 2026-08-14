@@ -6,7 +6,14 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Fixed
+
+- Expired OAuth authorization codes, access tokens and refresh tokens are now pruned from disk on read, not only at process start.
+- OAuth state persist merges the on-disk file under a sibling lock and keeps other-process revocations, rotations and new tokens instead of rewriting a stale snapshot.
+
+### Added
+
+- Regression coverage for expiry-on-read cleanup and two-process revocation, rotation and concurrent token writes.
 
 ## [1.0.8] - 2026-07-12
 
