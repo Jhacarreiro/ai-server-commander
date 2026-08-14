@@ -35,15 +35,18 @@ const replaceTextInSection = async ( filePath, replacements ) => {
 
     try {
         fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
+        const st = await fileHandle.stat();
+        if ( st.size > MAX_EDIT_FILE_BYTES ) {
+            throw new Error( `File exceeds MAX_EDIT_FILE_BYTES (${MAX_EDIT_FILE_BYTES}).` );
+        }
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
         log( 'Error reading or creating file:', err );
+        if ( err instanceof Error && err.message.includes( 'MAX_EDIT_FILE_BYTES' ) ) {
+            throw err;
+        }
     } finally {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
-    }
-
-    if ( Buffer.byteLength( fileContent, 'utf8' ) > MAX_EDIT_FILE_BYTES ) {
-        throw new Error( `File exceeds MAX_EDIT_FILE_BYTES (${MAX_EDIT_FILE_BYTES}).` );
     }
 
     const result = await mergeText( fileContent, replacements );
@@ -164,7 +167,13 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             if ( replacements.length === 0 && body.mergeText.length > 0 ) {
                 throw new Error( 'mergeText was not empty, but no conflict blocks were found, they are checked using regex like this /<<<<<<< HEAD[\\s\\S]*?>>>>>>> [\\w-]+/g Check what you send and try again' )
             }
+            if (replacements.length > MAX_REPLACEMENTS) {
+                return res.status(400).json({ error: `Too many replacements (max ${MAX_REPLACEMENTS}).` });
+            }
         } else {
+            if (body.replacements !== undefined && !Array.isArray(body.replacements)) {
+                return res.status(400).json({ error: 'replacements must be an array.' });
+            }
             replacements = body.replacements || (body.replacement && [body.replacement]) || [];
         
         if (!Array.isArray(replacements)) {
