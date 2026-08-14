@@ -90,6 +90,12 @@ function assert(condition, label, details = '') {
     r = await request('POST', '/api/runTerminalScript', { mode: 'inline', command: 'printf hello_post', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.output === 'hello_post' && r.body.mode === 'inline', 'POST inline command');
 
+    r = await request('POST', '/api/runTerminalScript?command=pwd&cwd=%2Ftmp&timeoutMs=5000&maxOutputChars=99');
+    assert(r.status === 200 && r.body.output === '/tmp' && r.body.maxOutputChars === 99, 'POST query-only options are honored', JSON.stringify(r.body));
+
+    r = await request('POST', '/api/runTerminalScript?command=pwd&cwd=%2Ftmp&maxOutputChars=99', { command: 'pwd', cwd: root, maxOutputChars: 42 });
+    assert(r.status === 200 && r.body.output === root && r.body.maxOutputChars === 42, 'POST body options override query fallbacks', JSON.stringify(r.body));
+
     r = await request('POST', '/v1/commands/execute', { mode: 'script', script: 'echo line1\necho line2', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.output.includes('line1') && r.body.output.includes('line2') && r.body.mode === 'script', 'POST script command');
 

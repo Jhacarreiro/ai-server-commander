@@ -30,6 +30,39 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const invalidCwd = parseRequest({ method: 'POST', body: { command: 'pwd', cwd: '/definitely/missing' }, query: {} });
     assert(invalidCwd.error && invalidCwd.status === 400, 'parseRequest rejects invalid cwd');
 
+    const postQueryOnly = parseRequest({
+        method: 'POST',
+        query: { command: 'pwd', cwd: '/tmp', timeoutMs: '5000', maxOutputChars: '99' },
+        body: {}
+    });
+    assert(
+        postQueryOnly.cwd === '/tmp' && postQueryOnly.timeoutMs === 5000 && postQueryOnly.maxOutputChars === 99,
+        'parseRequest POST honors query-only option fallbacks'
+    );
+
+    const postBodyWins = parseRequest({
+        method: 'POST',
+        query: { command: 'pwd', cwd: process.cwd(), timeoutMs: '1111', maxOutputChars: '11' },
+        body: { command: 'pwd', cwd: '/tmp', timeoutMs: 2222, maxOutputChars: 22 }
+    });
+    assert(
+        postBodyWins.cwd === '/tmp' && postBodyWins.timeoutMs === 2222 && postBodyWins.maxOutputChars === 22,
+        'parseRequest POST body options override query fallbacks'
+    );
+
+    const defaults = parseRequest({ method: 'POST', body: { command: 'pwd' }, query: {} });
+    const headNoQueryFallback = parseRequest({
+        method: 'HEAD',
+        query: { command: 'pwd', cwd: '/tmp', timeoutMs: '123', maxOutputChars: '99' },
+        body: {}
+    });
+    assert(
+        headNoQueryFallback.cwd === defaults.cwd &&
+            headNoQueryFallback.timeoutMs === defaults.timeoutMs &&
+            headNoQueryFallback.maxOutputChars === defaults.maxOutputChars,
+        'parseRequest does not merge query option fallbacks for non-POST methods'
+    );
+
     const first = executeBounded({ activityId: 'test_first', command: 'sleep 5', cwd: process.cwd(), timeoutMs: 10000, shell: '/bin/sh' });
     const second = executeBounded({ activityId: 'test_second', command: 'sleep 5', cwd: process.cwd(), timeoutMs: 10000, shell: '/bin/sh' });
     await delay(150);

@@ -30,7 +30,7 @@ function parseRequest(req) {
     // the other options so ?command=pwd&cwd=/tmp&timeoutMs=123 behaves
     // consistently instead of honoring only command and dropping the rest.
     const merged = { ...query, ...body };
-    const options = req.method === 'GET' ? query : merged;
+    const options = req.method === 'POST' ? merged : (req.method === 'GET' ? query : body);
 
     let mode = 'inline';
     if (req.method !== 'GET') {
