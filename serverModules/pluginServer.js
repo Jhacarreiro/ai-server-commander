@@ -63,9 +63,17 @@ const htmlContent = marked.parse(data);
         return res.status(status).json({ error: message });
     });
 
-    server.listen(config.port, () => {
-        log('Server running on http://localhost:' + config.port);
-        setURL(serverUrl);
+    // listen() reports bind failures (EADDRINUSE/EACCES) on the 'error'
+    // event rather than by throwing; reject so main.js can diagnose and exit.
+    await new Promise((resolve, reject) => {
+        const onError = (error) => reject(error);
+        server.once('error', onError);
+        server.listen(config.port, () => {
+            server.removeListener('error', onError);
+            log('Server running on http://localhost:' + config.port);
+            setURL(serverUrl);
+            resolve();
+        });
     });
     return server;
 };
