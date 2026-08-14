@@ -128,7 +128,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 
 | Key | Required | Purpose |
 |---|---:|---|
-| `port` | Yes | Local TCP port used by the Node server. |
+| `port` | Yes | Local TCP port. Must be a whole decimal integer from 1 to 65535. Digit strings, including zero-padded values such as `"00001"` or `"09999"`, are accepted and stored as the numeric port. Malformed values such as `"3000abc"`, `"1e3"` and floats fail startup. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |

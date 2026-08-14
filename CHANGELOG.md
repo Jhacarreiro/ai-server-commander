@@ -6,7 +6,9 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Changed
+
+- Configuration `port` now requires a whole decimal integer in 1..65535. Zero-padded digit strings such as `"00001"` remain valid; previously tolerated malformed values such as `"3000abc"`, `"1e3"` and floats fail at startup.
 
 ## [1.0.8] - 2026-07-12
 
