@@ -148,7 +148,7 @@ module.exports = function createMcpHandler() {
         if (method === 'tools/call') {
             if (!params || params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool');
 
-            const args = params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? { ...params.arguments } : {};
+            let args = params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? { ...params.arguments } : {};
             if (typeof params.arguments === 'string' && params.arguments.trim()) {
                 // MCP schema allows arguments as a JSON string ({ } | string);
                 // many SDKs send it that way. Silently dropping it made every
