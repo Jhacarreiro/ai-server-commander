@@ -34,9 +34,14 @@ module.exports.createToken = (getURL, filePath) => {
     let token = '';
     let existingTokenFound = false;
 
-    // Check for an existing token for the filePath
+    // Check for an existing token for the filePath.
+    // Guard malformed (null/non-object) entries before reading filePath so
+    // createToken can still clean them up instead of throwing.
     Object.keys(tokenStore).forEach(existingToken => {
         const tokenInfo = tokenStore[existingToken];
+        if (!tokenInfo || typeof tokenInfo !== 'object') {
+            return;
+        }
         if (tokenInfo.filePath === filePath && !isExpired(tokenInfo)) {
             // Extend the existing token's expiry date
             tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
