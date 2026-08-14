@@ -43,6 +43,23 @@ function terminateEntry(entry, signal = 'SIGTERM') {
     }
 }
 
+function clearKillTimer(entry) {
+    if (!entry || !entry.killTimer) return;
+    clearTimeout(entry.killTimer);
+    entry.killTimer = null;
+}
+
+// SIGTERM is not enough for children that trap or ignore it. Own a single
+// timer so completion can cancel it and a second call cannot stack SIGKILLs.
+function escalateToKill(entry, graceMs = 1500) {
+    if (!entry || !entry.child || !entry.child.pid) return;
+    clearKillTimer(entry);
+    entry.killTimer = setTimeout(() => {
+        entry.killTimer = null;
+        terminateEntry(entry, 'SIGKILL');
+    }, positiveInteger(graceMs, 1500));
+}
+
 function sanitizeCwd(raw) {
     if (typeof raw !== 'string') return undefined;
     const trimmed = raw.trim();
@@ -88,7 +105,7 @@ function executeBounded(options) {
             return;
         }
 
-        const entry = { child: null, interrupted: false, timedOut: false, timer: null };
+        const entry = { child: null, interrupted: false, timedOut: false, timer: null, killTimer: null };
         const child = exec(command, {
             shell,
             cwd,
@@ -96,6 +113,7 @@ function executeBounded(options) {
             maxBuffer: Math.max(effectiveMaxOutput * 4, 1024 * 1024)
         }, (error, stdout, stderr) => {
             if (entry.timer) clearTimeout(entry.timer);
+            clearKillTimer(entry);
             if (activeProcesses.get(activityId) === entry) activeProcesses.delete(activityId);
 
             const output = [
@@ -153,6 +171,10 @@ function getActiveCommandIds() {
     return Array.from(activeProcesses.keys());
 }
 
+// Grace before SIGKILL on restart. The hard-exit deadline in
+// exitApplicationHandler must stay strictly after this window.
+const TERMINATE_ALL_ESCALATE_MS = 800;
+
 // Kill every active command process group (SIGTERM then escalate to SIGKILL).
 // Used on server shutdown/restart: detached children would otherwise survive
 // process.exit() and keep running unmanaged.
@@ -160,7 +182,7 @@ function terminateAll() {
     const entries = Array.from(activeProcesses.values());
     for (const entry of entries) {
         terminateEntry(entry);
-        escalateToKill(entry, 800);
+        escalateToKill(entry, TERMINATE_ALL_ESCALATE_MS);
     }
 }
 
@@ -171,6 +193,7 @@ module.exports = {
     MAX_SCRIPT_BODY_BYTES,
     MAX_SHELL_BYTES,
     SAFE_MODE,
+    TERMINATE_ALL_ESCALATE_MS,
     executeBounded,
     findBlockedPattern,
     getActiveCommandIds,
