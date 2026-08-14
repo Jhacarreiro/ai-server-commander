@@ -150,9 +150,11 @@ module.exports = function createMcpHandler() {
 
             let args = params.arguments && typeof params.arguments === 'object' ? { ...params.arguments } : {};
             if (typeof params.arguments === 'string' && params.arguments.trim()) {
-                // MCP schema allows arguments as a JSON string ({ } | string);
-                // many SDKs send it that way. Silently dropping it made every
-                // such call fail with "Command parameter is required".
+                // Published MCP CallToolRequest.arguments is an object. Some
+                // clients serialize that object as JSON text; accept only a
+                // JSON object string as a compatibility extension. Other
+                // JSON values stay -32602 so the adapter does not silently
+                // drop them as an empty command.
                 try {
                     const parsed = JSON.parse(params.arguments);
                     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = { ...parsed };

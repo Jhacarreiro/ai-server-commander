@@ -6,7 +6,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- MCP `tools/call` accepts `arguments` as a JSON-encoded object string, as a compatibility extension of the published MCP object contract. Malformed JSON and non-object JSON strings return `-32602`.
+- Added MCP smoke coverage for JSON-object strings, malformed strings and non-object JSON strings, including a live request/response transcript in the test output.
 
 ## [1.0.8] - 2026-07-12
 

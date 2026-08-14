@@ -209,6 +209,8 @@ The primary tool is `run_terminal_command`.
 | `timeoutMs` | integer | Requested timeout, capped by server policy. |
 | `maxOutputChars` | integer | Requested output limit, capped by server policy. |
 
+Published MCP `tools/call` `arguments` are a JSON object. This adapter also accepts a JSON-encoded object string as a compatibility extension for clients that serialize arguments as text. Malformed JSON and JSON that is not an object return `-32602`.
+
 ### OAuth discovery
 
 The server publishes:
@@ -368,7 +370,7 @@ The smoke suite covers:
 - multi-line scripts and request-size limits;
 - invalid working directories;
 - concurrency and targeted interruption;
-- MCP initialization, metadata and execution;
+- MCP initialization, metadata and execution, including JSON-string `arguments`;
 - OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
 - native setup and Firebase Admin compatibility;
 - `SAFE_MODE` results;
