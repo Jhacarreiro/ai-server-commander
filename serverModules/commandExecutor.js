@@ -19,15 +19,16 @@ const blockedCommandPatterns = [
     // defeats rm's own failsafe; glob/expansion suffixes (/*, /?, /$x) and
     // command chaining (/; /&& /|) previously slipped past the (?:\s|$) anchor.
     /\brm\b[^;\n|&]*?--no-preserve-root/i,
-    /\brm\s+-rf?\b[^;\n|&]*?\/\s*(?:[;&|]|$)/i,
-    /\brm\s+-rf?\b[^;\n|&]*?\/(?:[*?[]|\$)/i,
-    /\brm\s+--recursive\b[^;\n|&]*?--force\b[^;\n|&]*?\//i,
+    // Root operand: keep original (?:\s|$) so extra text or a newline after
+    // "/" stays blocked, and also catch chaining/glob/expansion suffixes.
+    /\brm\s+-rf?\b[^;\n|&]*?\/(?:\s|$|[;&|*?[]|\$)/i,
+    /\brm\s+(?:--recursive\b[^;\n|&]*?--force|--force\b[^;\n|&]*?--recursive)\b[^;\n|&]*?\/(?:\s|$|[;&|*?[]|\$)/i,
     /\$\(\s*rm\b/,
     /`\s*rm\b/,
     /\bmkfs(?:\.|\s|$)/i,
     // dd writing TO a device node (of=/dev/*) is destructive regardless of
-    // argument order; dd if=... of=regular-file stays allowed.
-    /\bdd\b[^;\n|&]*?of=\/dev\//i,
+    // argument order or quoting; dd if=... of=regular-file stays allowed.
+    /\bdd\b[^;\n|&]*?of=["']?\/dev\//i,
     // fork bomb with any identifier (including the classic literal ':' form).
     /[A-Za-z_:][A-Za-z0-9_]*\s*\(\s*\)\s*\{\s*[A-Za-z_:][A-Za-z0-9_]*\s*\|\s*[A-Za-z_:][A-Za-z0-9_]*\s*&\s*\}/,
     /\bshutdown\b/i,
