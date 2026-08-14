@@ -6,7 +6,13 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Fixed
+
+- First-run setup re-prompts on invalid port or public origin instead of crashing, and treats Ctrl-D/EOF as a clean cancellation that does not write `config.json`.
+
+### Changed
+
+- Configuration `port` now requires a whole decimal integer in 1..65535. Zero-padded digit strings such as `"00001"` remain valid; previously tolerated malformed values such as `"3000abc"`, `"1e3"` and floats fail validation so the setup wizard can retry.
 
 ## [1.0.8] - 2026-07-12
 
