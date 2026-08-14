@@ -18,8 +18,10 @@ function stringifyError(err) {
 function sanitizeMessage(message) {
     const text = String(message || "Error");
     return text
-        .replace(/\/[\w.-]+(?:\/[\w.-]+)+/g, "[path]")
-        .replace(/[A-Za-z]:\\[\w.\\-]+/g, "[path]")
+        // Windows drive paths: backslash, forward slash, spaces (C:\Program Files\..., C:/Users/...)
+        .replace(/[A-Za-z]:(?:[\\/][^\\/:*?"'<>|\r\n,]+)+/g, "[path]")
+        // POSIX absolute paths, including spaces (/srv/ai server/mission control.js)
+        .replace(/(?:\/[^\/:*?"'<>|\r\n,]+)+/g, "[path]")
         .slice(0, 300);
 }
 
