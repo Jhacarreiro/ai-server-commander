@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 
 const STORE_VERSION = 1;
+const SECTIONS = ['clients', 'authCodes', 'accessTokens', 'refreshTokens'];
+const LOCK_STALE_MS = 30_000;
+const LOCK_WAIT_MS = 5_000;
 const stores = new Map();
 
 function hashSecret(value) {
@@ -58,16 +61,90 @@ function resolveStatePath(config = {}) {
     return path.resolve(configured || path.join(__dirname, '..', 'runtime', 'oauth-state.json'));
 }
 
+function recordKey(section, key) {
+    return `${section}:${key}`;
+}
+
+function pidIsAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return error.code === 'EPERM';
+    }
+}
+
+function sleepMs(ms) {
+    try {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    } catch (_) {
+        const end = Date.now() + ms;
+        while (Date.now() < end) { /* lock backoff */ }
+    }
+}
+
+function lockDirFor(statePath) {
+    return `${statePath}.lock`;
+}
+
+function tryStealStaleLock(lockDir) {
+    let pid = null;
+    try {
+        pid = Number.parseInt(fs.readFileSync(path.join(lockDir, 'pid'), 'utf8'), 10);
+    } catch (_) {
+        pid = null;
+    }
+    if (pidIsAlive(pid)) return false;
+    if (Number.isInteger(pid) && pid > 0) {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+        return true;
+    }
+    let mtimeMs;
+    try {
+        mtimeMs = fs.statSync(lockDir).mtimeMs;
+    } catch (_) {
+        return false;
+    }
+    if (Date.now() - mtimeMs <= LOCK_STALE_MS) return false;
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    return true;
+}
+
+function acquireStateLock(statePath) {
+    const lockDir = lockDirFor(statePath);
+    fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    while (true) {
+        try {
+            fs.mkdirSync(lockDir);
+            fs.writeFileSync(path.join(lockDir, 'pid'), `${process.pid}\n`, { mode: 0o600 });
+            return lockDir;
+        } catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+            tryStealStaleLock(lockDir);
+            if (Date.now() > deadline) {
+                throw new Error(`Timed out waiting for OAuth state lock at ${lockDir}`);
+            }
+            sleepMs(20);
+        }
+    }
+}
+
+function releaseStateLock(lockDir) {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+}
+
 class OAuthStore {
     constructor(statePath, now = () => Date.now()) {
         this.statePath = path.resolve(statePath);
         this.now = now;
-        this.data = this.load();
-        // Keys deleted/pruned in this instance's lifetime must not be
-        // resurrected by the persist() disk-merge (the pre-rename disk file
-        // still contains rotated-away tokens, so a blind union would undo
-        // revocations).
+        this._dirty = new Set();
+        // Local deletions must win over a later disk merge so this process
+        // cannot resurrect a token it just rotated, revoked, consumed, or pruned.
         this._tombstones = new Set();
+        this._locked = false;
+        this.data = this.load();
         this.pruneExpired();
     }
 
@@ -87,37 +164,63 @@ class OAuthStore {
         return normalizeState(parsed);
     }
 
-    persist() {
+    _markDirty(section, key) {
+        const id = recordKey(section, key);
+        this._dirty.add(id);
+        this._tombstones.delete(id);
+    }
+
+    _tombstone(section, key) {
+        const id = recordKey(section, key);
+        this._tombstones.add(id);
+        this._dirty.delete(id);
+    }
+
+    _withStateLock(fn) {
+        if (this._locked) return fn();
+        const lockDir = acquireStateLock(this.statePath);
+        this._locked = true;
+        try {
+            return fn();
+        } finally {
+            this._locked = false;
+            releaseStateLock(lockDir);
+        }
+    }
+
+    _mergeFromDisk(disk) {
+        const merged = emptyState();
+        for (const section of SECTIONS) {
+            const diskSection = disk[section] || {};
+            const memSection = this.data[section] || {};
+            for (const [key, value] of Object.entries(diskSection)) {
+                if (this._tombstones.has(recordKey(section, key))) continue;
+                merged[section][key] = value;
+            }
+            for (const [key, value] of Object.entries(memSection)) {
+                if (!this._dirty.has(recordKey(section, key))) continue;
+                if (this._tombstones.has(recordKey(section, key))) continue;
+                merged[section][key] = value;
+            }
+        }
+        this.data = merged;
+    }
+
+    _applyDiskState() {
+        this._mergeFromDisk(this.load());
+    }
+
+    _writeAtomic() {
         const directory = path.dirname(this.statePath);
         fs.mkdirSync(directory, { recursive: true });
         const temporaryPath = `${this.statePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-        // Merge the on-disk state into this snapshot before writing: two
-        // server instances sharing one state file otherwise lose each
-        // other's writes (last-writer-wins whole-file rewrite). Records
-        // written by the other instance since our last load are preserved;
-        // our in-memory values win for keys we hold.
-        try {
-            const diskData = this.load();
-            for (const section of ['authCodes', 'accessTokens', 'refreshTokens', 'clients']) {
-                const diskSection = diskData[section] || {};
-                const memSection = this.data[section] || {};
-                for (const [key, value] of Object.entries(diskSection)) {
-                    // Skip keys this instance deleted/pruned: the pre-rename
-                    // disk file still contains them, and a blind union would
-                    // resurrect rotated-away tokens and revocations.
-                    if (this._tombstones.has(`${section}:${key}`)) continue;
-                    if (!(key in memSection)) memSection[key] = value;
-                }
-            }
-        } catch {
-            // Unreadable/corrupt on-disk state: proceed with our snapshot.
-        }
         const payload = JSON.stringify({
             ...this.data,
             updatedAt: new Date(this.now()).toISOString()
         }, null, 2) + '\n';
 
         let fd;
+        let replaced = false;
         try {
             fd = fs.openSync(temporaryPath, 'wx', 0o600);
             fs.writeFileSync(fd, payload, 'utf8');
@@ -125,6 +228,7 @@ class OAuthStore {
             fs.closeSync(fd);
             fd = undefined;
             fs.renameSync(temporaryPath, this.statePath);
+            replaced = true;
             fs.chmodSync(this.statePath, 0o600);
             try {
                 const dirFd = fs.openSync(directory, 'r');
@@ -136,6 +240,14 @@ class OAuthStore {
             if (typeof fd === 'number') fs.closeSync(fd);
             if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
         }
+        if (replaced) this._dirty.clear();
+    }
+
+    persist() {
+        this._withStateLock(() => {
+            this._applyDiskState();
+            this._writeAtomic();
+        });
     }
 
     pruneExpired() {
@@ -154,29 +266,31 @@ class OAuthStore {
         return changed;
     }
 
-    _tombstone(section, key) {
-        this._tombstones.add(`${section}:${key}`);
-    }
-
     getClient(clientId) {
+        this._applyDiskState();
         return this.data.clients[clientId] || null;
     }
 
     setClient(client) {
         this.data.clients[client.client_id] = { ...client };
+        this._markDirty('clients', client.client_id);
         this.persist();
     }
 
     getAuthCode(rawCode) {
+        this._applyDiskState();
         return this.data.authCodes[hashSecret(rawCode)] || null;
     }
 
     setAuthCode(rawCode, record) {
-        this.data.authCodes[hashSecret(rawCode)] = { ...record };
+        const key = hashSecret(rawCode);
+        this.data.authCodes[key] = { ...record };
+        this._markDirty('authCodes', key);
         this.persist();
     }
 
     deleteAuthCode(rawCode) {
+        this._applyDiskState();
         const key = hashSecret(rawCode);
         if (!this.data.authCodes[key]) return false;
         delete this.data.authCodes[key];
@@ -186,15 +300,19 @@ class OAuthStore {
     }
 
     getAccessToken(rawToken) {
+        this._applyDiskState();
         return this.data.accessTokens[hashSecret(rawToken)] || null;
     }
 
     setAccessToken(rawToken, record, persist = true) {
-        this.data.accessTokens[hashSecret(rawToken)] = { ...record };
+        const key = hashSecret(rawToken);
+        this.data.accessTokens[key] = { ...record };
+        this._markDirty('accessTokens', key);
         if (persist) this.persist();
     }
 
     deleteAccessToken(rawToken, persist = true) {
+        if (persist) this._applyDiskState();
         const key = hashSecret(rawToken);
         const existed = Boolean(this.data.accessTokens[key]);
         delete this.data.accessTokens[key];
@@ -204,15 +322,19 @@ class OAuthStore {
     }
 
     getRefreshToken(rawToken) {
+        this._applyDiskState();
         return this.data.refreshTokens[hashSecret(rawToken)] || null;
     }
 
     setRefreshToken(rawToken, record, persist = true) {
-        this.data.refreshTokens[hashSecret(rawToken)] = { ...record };
+        const key = hashSecret(rawToken);
+        this.data.refreshTokens[key] = { ...record };
+        this._markDirty('refreshTokens', key);
         if (persist) this.persist();
     }
 
     deleteRefreshToken(rawToken, persist = true) {
+        if (persist) this._applyDiskState();
         const key = hashSecret(rawToken);
         const existed = Boolean(this.data.refreshTokens[key]);
         delete this.data.refreshTokens[key];
@@ -229,41 +351,54 @@ class OAuthStore {
 
     exchangeAuthorizationCode(rawCode, accessToken, accessRecord, refreshToken, refreshRecord) {
         const codeKey = hashSecret(rawCode);
-        delete this.data.authCodes[codeKey];
-        // Single-use: without the tombstone the persist() disk-merge would
-        // resurrect the consumed code from the pre-rename file and allow
-        // replay.
-        this._tombstone('authCodes', codeKey);
-        this.setAccessToken(accessToken, accessRecord, false);
-        this.setRefreshToken(refreshToken, refreshRecord, false);
-        this.persist();
+        this._withStateLock(() => {
+            this._applyDiskState();
+            if (!this.data.authCodes[codeKey]) {
+                throw new Error('Authorization code already consumed.');
+            }
+            delete this.data.authCodes[codeKey];
+            this._tombstone('authCodes', codeKey);
+            this.setAccessToken(accessToken, accessRecord, false);
+            this.setRefreshToken(refreshToken, refreshRecord, false);
+            this._writeAtomic();
+        });
     }
 
     rotateRefreshToken(oldRefreshToken, accessToken, accessRecord, refreshToken, refreshRecord) {
-        this.deleteRefreshToken(oldRefreshToken, false);
-        this.setAccessToken(accessToken, accessRecord, false);
-        this.setRefreshToken(refreshToken, refreshRecord, false);
-        this.persist();
+        this._withStateLock(() => {
+            this._applyDiskState();
+            const oldKey = hashSecret(oldRefreshToken);
+            if (!this.data.refreshTokens[oldKey]) {
+                throw new Error('Refresh token already rotated or revoked.');
+            }
+            this.deleteRefreshToken(oldRefreshToken, false);
+            this.setAccessToken(accessToken, accessRecord, false);
+            this.setRefreshToken(refreshToken, refreshRecord, false);
+            this._writeAtomic();
+        });
     }
 
     revokeToken(rawToken, clientId) {
-        let changed = false;
-        const accessKey = hashSecret(rawToken);
-        const refreshKey = hashSecret(rawToken);
-        const access = this.data.accessTokens[accessKey];
-        const refresh = this.data.refreshTokens[refreshKey];
-        if (access && access.client_id === clientId) {
-            delete this.data.accessTokens[accessKey];
-            this._tombstone('accessTokens', accessKey);
-            changed = true;
-        }
-        if (refresh && refresh.client_id === clientId) {
-            delete this.data.refreshTokens[refreshKey];
-            this._tombstone('refreshTokens', refreshKey);
-            changed = true;
-        }
-        if (changed) this.persist();
-        return changed;
+        return this._withStateLock(() => {
+            this._applyDiskState();
+            let changed = false;
+            const accessKey = hashSecret(rawToken);
+            const refreshKey = hashSecret(rawToken);
+            const access = this.data.accessTokens[accessKey];
+            const refresh = this.data.refreshTokens[refreshKey];
+            if (access && access.client_id === clientId) {
+                delete this.data.accessTokens[accessKey];
+                this._tombstone('accessTokens', accessKey);
+                changed = true;
+            }
+            if (refresh && refresh.client_id === clientId) {
+                delete this.data.refreshTokens[refreshKey];
+                this._tombstone('refreshTokens', refreshKey);
+                changed = true;
+            }
+            if (changed) this._writeAtomic();
+            return changed;
+        });
     }
 }
 

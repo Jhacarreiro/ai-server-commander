@@ -5,7 +5,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { OAuthStore } = require('../serverModules/oauthStore');
+const { OAuthStore, hashSecret } = require('../serverModules/oauthStore');
 
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-oauth-'));
@@ -104,11 +104,201 @@ function pkceChallenge(verifier) {
     return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
+function readState(filePath) {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function assertHashedRecord(section, rawValue, present, label) {
+    const hashed = hashSecret(rawValue);
+    const record = section[hashed];
+    if (present) assert.ok(record, label);
+    else assert.strictEqual(record, undefined, label);
+}
+
+function runChildStoreScript(statePath, source) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', source], {
+            cwd: root,
+            env: { ...process.env, OAUTH_STATE_PATH: statePath },
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => { stdout += chunk; });
+        child.stderr.on('data', (chunk) => { stderr += chunk; });
+        child.on('error', reject);
+        child.on('exit', (code) => {
+            if (code === 0) resolve(stdout.trim());
+            else reject(new Error(`child store script exited ${code}: ${stderr || stdout}`));
+        });
+    });
+}
+
 (async () => {
     const corruptPath = path.join(temp, 'corrupt.json');
     fs.writeFileSync(corruptPath, '{not-json', { mode: 0o600 });
     assert.throws(() => new OAuthStore(corruptPath), /Unable to read OAuth state/);
     console.log('PASS corrupt OAuth state fails closed');
+
+    const linkPath = path.join(temp, 'oauth-link.json');
+    fs.symlinkSync(corruptPath, linkPath);
+    assert.throws(() => new OAuthStore(linkPath), /symlink or special file/);
+    console.log('PASS symlink OAuth state fails closed');
+
+    const persistFailPath = path.join(temp, 'persist-fail.json');
+    const persistFailStore = new OAuthStore(persistFailPath);
+    persistFailStore.setAccessToken('persist-ok', { client_id: 'fail-client', expires_at: Date.now() + 60_000 });
+    fs.writeFileSync(persistFailPath, '{not-json', { mode: 0o600 });
+    assert.throws(
+        () => persistFailStore.setAccessToken('persist-later', { client_id: 'fail-client', expires_at: Date.now() + 60_000 }),
+        /Unable to read OAuth state/
+    );
+    assert.strictEqual(fs.readFileSync(persistFailPath, 'utf8'), '{not-json');
+    console.log('PASS persist merge-read of corrupt state fails closed');
+
+    fs.rmSync(persistFailPath);
+    fs.symlinkSync(corruptPath, persistFailPath);
+    assert.throws(
+        () => persistFailStore.setAccessToken('persist-symlink', { client_id: 'fail-client', expires_at: Date.now() + 60_000 }),
+        /symlink or special file/
+    );
+    assert.ok(fs.lstatSync(persistFailPath).isSymbolicLink());
+    console.log('PASS persist merge-read of symlink fails closed');
+
+    const sharedPath = path.join(temp, 'shared-oauth-state.json');
+    const writer = new OAuthStore(sharedPath);
+    const liveRecord = { client_id: 'shared-client', expires_at: Date.now() + 60_000 };
+    writer.setAccessToken('keep-access', liveRecord);
+    writer.setAccessToken('revoke-access', liveRecord);
+    writer.setRefreshToken('keep-refresh', liveRecord);
+    writer.setRefreshToken('rotate-old', liveRecord);
+    writer.setAuthCode('consume-code', liveRecord);
+
+    const stale = new OAuthStore(sharedPath);
+    writer.revokeToken('revoke-access', 'shared-client');
+    writer.rotateRefreshToken(
+        'rotate-old',
+        'rotated-access',
+        liveRecord,
+        'rotate-new',
+        liveRecord
+    );
+    writer.exchangeAuthorizationCode('consume-code', 'exchanged-access', liveRecord, 'exchanged-refresh', liveRecord);
+    writer.setAccessToken('writer-new-access', liveRecord);
+
+    stale.setAccessToken('stale-new-access', liveRecord);
+
+    const afterStaleWrite = readState(sharedPath);
+    assertHashedRecord(afterStaleWrite.accessTokens, 'revoke-access', false, 'revoked access stays deleted after other-instance persist');
+    assertHashedRecord(afterStaleWrite.refreshTokens, 'rotate-old', false, 'rotated-away refresh stays deleted after other-instance persist');
+    assertHashedRecord(afterStaleWrite.authCodes, 'consume-code', false, 'consumed authorization code stays deleted after other-instance persist');
+    assertHashedRecord(afterStaleWrite.accessTokens, 'keep-access', true, 'unrelated access survives other-instance persist');
+    assertHashedRecord(afterStaleWrite.refreshTokens, 'keep-refresh', true, 'unrelated refresh survives other-instance persist');
+    assertHashedRecord(afterStaleWrite.accessTokens, 'writer-new-access', true, 'newer access from other instance survives stale persist');
+    assertHashedRecord(afterStaleWrite.refreshTokens, 'rotate-new', true, 'rotated-in refresh survives stale persist');
+    assertHashedRecord(afterStaleWrite.accessTokens, 'stale-new-access', true, 'stale instance local write is kept');
+    assert.strictEqual(stale.getAccessToken('revoke-access'), null);
+    assert.strictEqual(stale.getRefreshToken('rotate-old'), null);
+    assert.strictEqual(stale.getAuthCode('consume-code'), null);
+    assert.ok(stale.getAccessToken('writer-new-access'));
+    assert.ok(stale.getRefreshToken('rotate-new'));
+    console.log('PASS other-instance persist does not restore revoked, rotated or consumed credentials');
+    console.log('PASS newer tokens from the other instance survive stale persist');
+
+    const visiblePath = path.join(temp, 'visible-oauth-state.json');
+    const issuer = new OAuthStore(visiblePath);
+    const observer = new OAuthStore(visiblePath);
+    issuer.setAccessToken('cross-visible', liveRecord);
+    assert.ok(observer.getAccessToken('cross-visible'), 'issued token is visible to the other instance without a local persist');
+    issuer.revokeToken('cross-visible', 'shared-client');
+    assert.strictEqual(observer.getAccessToken('cross-visible'), null, 'revoked token is invisible to the other instance without a local persist');
+    console.log('PASS reads see credentials issued or revoked by another instance');
+
+    const replayPath = path.join(temp, 'replay-oauth-state.json');
+    const firstExchanger = new OAuthStore(replayPath);
+    firstExchanger.setAuthCode('once-code', liveRecord);
+    const secondExchanger = new OAuthStore(replayPath);
+    firstExchanger.exchangeAuthorizationCode('once-code', 'first-access', liveRecord, 'first-refresh', liveRecord);
+    assert.throws(
+        () => secondExchanger.exchangeAuthorizationCode('once-code', 'replay-access', liveRecord, 'replay-refresh', liveRecord),
+        /already consumed/
+    );
+    const afterReplay = readState(replayPath);
+    assertHashedRecord(afterReplay.authCodes, 'once-code', false, 'consumed code is not on disk after replay attempt');
+    assertHashedRecord(afterReplay.accessTokens, 'first-access', true, 'first exchange tokens remain');
+    assertHashedRecord(afterReplay.accessTokens, 'replay-access', false, 'replay exchange did not persist tokens');
+    console.log('PASS consumed authorization code cannot be replayed by another instance');
+
+    const rotateReplayPath = path.join(temp, 'rotate-replay-oauth-state.json');
+    const firstRotator = new OAuthStore(rotateReplayPath);
+    firstRotator.setRefreshToken('old-refresh', liveRecord);
+    const secondRotator = new OAuthStore(rotateReplayPath);
+    firstRotator.rotateRefreshToken('old-refresh', 'rot-access-a', liveRecord, 'rot-refresh-a', liveRecord);
+    assert.throws(
+        () => secondRotator.rotateRefreshToken('old-refresh', 'rot-access-b', liveRecord, 'rot-refresh-b', liveRecord),
+        /already rotated or revoked/
+    );
+    const afterRotateReplay = readState(rotateReplayPath);
+    assertHashedRecord(afterRotateReplay.refreshTokens, 'old-refresh', false, 'rotated-away refresh stays deleted after replay attempt');
+    assertHashedRecord(afterRotateReplay.refreshTokens, 'rot-refresh-a', true, 'first rotation refresh remains');
+    assertHashedRecord(afterRotateReplay.refreshTokens, 'rot-refresh-b', false, 'replay rotation did not persist a new refresh');
+    console.log('PASS rotated refresh token cannot be replayed by another instance');
+
+    const racePath = path.join(temp, 'race-oauth-state.json');
+    const storeModule = path.join(root, 'serverModules', 'oauthStore.js');
+    const childScript = (rawToken) => `
+        const { OAuthStore } = require(${JSON.stringify(storeModule)});
+        const store = new OAuthStore(${JSON.stringify(racePath)});
+        store.setAccessToken(${JSON.stringify(rawToken)}, {
+            client_id: 'race-client',
+            expires_at: Date.now() + 60_000
+        });
+        process.stdout.write('wrote');
+    `;
+    await Promise.all([
+        runChildStoreScript(racePath, childScript('race-token-a')),
+        runChildStoreScript(racePath, childScript('race-token-b'))
+    ]);
+    const raced = readState(racePath);
+    assertHashedRecord(raced.accessTokens, 'race-token-a', true, 'concurrent writer A token survived');
+    assertHashedRecord(raced.accessTokens, 'race-token-b', true, 'concurrent writer B token survived');
+    assert.ok(!JSON.stringify(raced).includes('race-token-a'));
+    assert.ok(!JSON.stringify(raced).includes('race-token-b'));
+    console.log('PASS concurrent writers keep both new tokens');
+
+    const childReplayPath = path.join(temp, 'child-replay-oauth-state.json');
+    const seed = new OAuthStore(childReplayPath);
+    seed.setAuthCode('child-once', liveRecord);
+    const exchangeScript = (accessToken, refreshToken) => `
+        const { OAuthStore } = require(${JSON.stringify(storeModule)});
+        const store = new OAuthStore(${JSON.stringify(childReplayPath)});
+        try {
+            store.exchangeAuthorizationCode(
+                'child-once',
+                ${JSON.stringify(accessToken)},
+                { client_id: 'shared-client', expires_at: Date.now() + 60_000 },
+                ${JSON.stringify(refreshToken)},
+                { client_id: 'shared-client', expires_at: Date.now() + 60_000 }
+            );
+            process.stdout.write('won');
+        } catch (error) {
+            if (!/already consumed/.test(error.message)) throw error;
+            process.stdout.write('lost');
+        }
+    `;
+    const childResults = await Promise.all([
+        runChildStoreScript(childReplayPath, exchangeScript('child-access-a', 'child-refresh-a')),
+        runChildStoreScript(childReplayPath, exchangeScript('child-access-b', 'child-refresh-b'))
+    ]);
+    assert.deepStrictEqual(childResults.slice().sort(), ['lost', 'won']);
+    const afterChildReplay = readState(childReplayPath);
+    assertHashedRecord(afterChildReplay.authCodes, 'child-once', false, 'two-process exchange consumed the code once');
+    const childWins = [
+        Boolean(afterChildReplay.accessTokens[hashSecret('child-access-a')]),
+        Boolean(afterChildReplay.accessTokens[hashSecret('child-access-b')])
+    ].filter(Boolean);
+    assert.strictEqual(childWins.length, 1, 'exactly one two-process exchange persisted tokens');
+    console.log('PASS two-process authorization-code exchange allows only one winner');
 
     await startServer();
 

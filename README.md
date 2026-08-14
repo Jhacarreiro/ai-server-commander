@@ -234,7 +234,7 @@ The server publishes:
 
 The built-in flow supports dynamic client registration, authorization code + PKCE, refresh-token rotation and RFC-style token revocation. The authorization page asks for the server `authToken` as the approval code.
 
-OAuth state is persisted atomically at `OAUTH_STATE_PATH`. Client secrets, authorization codes, access tokens and refresh tokens are stored only as SHA-256 hashes; raw values are returned to the client only when issued. The state file is forced to mode `600` on supported POSIX filesystems. After upgrading from an in-memory-only release, existing clients must authorize once; credentials issued by v1.0.8 or later survive normal restarts.
+OAuth state is persisted atomically at `OAUTH_STATE_PATH`. Client secrets, authorization codes, access tokens and refresh tokens are stored only as SHA-256 hashes; raw values are returned to the client only when issued. The state file is forced to mode `600` on supported POSIX filesystems. Writers serialize through a sibling `${OAUTH_STATE_PATH}.lock` directory and merge the on-disk file before replacing it, so a second process cannot restore a revoked, rotated or consumed credential or drop a token the other process just wrote. Reads apply the same merge. Prefer one writer per state file; multiple writers are supported only through that lock-and-merge path. After upgrading from an in-memory-only release, existing clients must authorize once; credentials issued by v1.0.8 or later survive normal restarts.
 
 ### ChatGPT MCP readiness
 
@@ -378,7 +378,7 @@ The smoke suite covers:
 - invalid working directories;
 - concurrency and targeted interruption;
 - MCP initialization, advertised protocol version, empty-batch rejection and execution;
-- OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
+- OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation, revocation, concurrent writers, and fail-closed corrupt/symlink loads;
 - native setup and Firestore service-account compatibility;
 - `SAFE_MODE` results;
 - OpenAPI generation and version alignment.

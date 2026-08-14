@@ -16,6 +16,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
 
+### Fixed
+
+- OAuth state persist now serializes writers through a sibling lock, merges the on-disk file so other-process revocations, rotations and new tokens are kept, and still fails closed on corrupt or symlink loads.
+
 ## [1.0.8] - 2026-07-12
 
 ### Added
