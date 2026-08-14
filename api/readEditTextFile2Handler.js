@@ -68,15 +68,12 @@ const replaceTextInSection = async ( filePath, replacements ) => {
  *              schema:
  *                type: string
  *        400:
- *          description: Error reading the file
+ *          description: There was an error processing the file. Response is a plain text error message.
  *          content:
- *            application/json:
+ *            text/plain:
  *              schema:
- *                type: object
- *                properties:
- *                  error:
- *                    type: string
- *                    description: Error message explaining the reason for failure
+ *                type: string
+ *                description: Error message with failure context
  *   post:
  *     summary: Modify a file using search and replace command list
  *     description: Accepts a file path and a search and replace strings
@@ -110,7 +107,7 @@ const replaceTextInSection = async ( filePath, replacements ) => {
  *           text/plain:
  *             schema:
  *               type: string
- *               description: Human-readable summary envelope ("File url: ... Changed diff url: ... File content: ...")
+ *               description: Human-readable summary envelope including file URL, changed diff URL, and file content
  *       400:
  *         description: There was an error in the text replacement. Response is a plain text error message.
  *         content:
@@ -175,7 +172,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
                 responseMessage += `\nFile content before change: ${replaceResult.originalContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
                 responseMessage += `\nFile content after change: ${replaceResult.updatedContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
                 log( 'responseMessage', responseMessage );
-                res.status( 400 ).send( responseMessage );
+                res.status( 400 ).type( 'text/plain' ).send( responseMessage );
                 return;
             }
         }
@@ -189,7 +186,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             if ( replacements.length > replaceResult.unsuccessfulReplacements.length ) {
                 responseMessage += `\n${replacements.length - replaceResult.unsuccessfulReplacements.length} replacements were successful do them first, then try fixing failing ones in separate request`;
             }
-            res.status( 400 ).send( responseMessage );
+            res.status( 400 ).type( 'text/plain' ).send( responseMessage );
             return;
         }
 
