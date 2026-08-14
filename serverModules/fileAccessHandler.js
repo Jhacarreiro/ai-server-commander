@@ -19,7 +19,19 @@ const readTokenStore = () => {
     if (!fs.existsSync(tokenStorePath)) return {};
     try {
         const parsed = JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
-        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+        const normalized = {};
+        for (const [key, value] of Object.entries(parsed)) {
+            if (
+                value &&
+                typeof value === "object" &&
+                typeof value.filePath === "string" &&
+                !Number.isNaN(new Date(value.expiryDate).getTime())
+            ) {
+                normalized[key] = value;
+            }
+        }
+        return normalized;
     } catch (err) {
         log("tokenStore.json unreadable; starting empty store:", err && err.message ? err.message : err);
         return {};
@@ -108,9 +120,25 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     if (req.query.diff) {
+        let st;
+        try {
+            st = fs.statSync(tokenInfo.filePath);
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        if (!st.isFile()) {
+            return res.status(400).send('Token target is not a regular file.');
+        }
+        if (st.size > MAX_ACCESS_FILE_BYTES) {
+            return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
+        }
         const git = simpleGit();
         try {
             const diffOutput = await git.diff(['--', tokenInfo.filePath]);
+            if (Buffer.byteLength(diffOutput, 'utf8') > MAX_ACCESS_FILE_BYTES * 2) {
+                return res.status(413).send('Diff output exceeds MAX_ACCESS_FILE_BYTES.');
+            }
             const htmlDiff = `
                 <!DOCTYPE html>
                 <html>
@@ -137,28 +165,26 @@ module.exports.retrieveFile = async (req, res) => {
             res.status(500).send('Error fetching Git diff.');
         }
     } else {
-        let st;
+        let fd;
         try {
-            st = fs.statSync(tokenInfo.filePath);
+            fd = fs.openSync(tokenInfo.filePath, 'r');
         } catch (err) {
             console.error(err);
             return res.status(500).send('Failed to read the file.');
         }
-        if (!st.isFile()) {
-            return res.status(400).send('Token target is not a regular file.');
-        }
-        if (st.size > MAX_ACCESS_FILE_BYTES) {
-            return res.status(413).send(
-                'File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').'
-            );
-        }
-        fs.readFile(tokenInfo.filePath, 'utf8', (err, data) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Failed to read the file.');
+        try {
+            const st = fs.fstatSync(fd);
+            if (!st.isFile()) {
+                return res.status(400).send('Token target is not a regular file.');
             }
+            if (st.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
+            }
+            const data = fs.readFileSync(fd, 'utf8');
             res.setHeader('Content-Type', 'text/plain');
             res.send(data);
-        });
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 };
