@@ -161,10 +161,12 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
+        // Mint once and reuse: createToken rotates (one active token per
+        // file), so a second mint would revoke the File url immediately.
         const url = createToken( getURL, filePath );
         let responseMessage = `
         File url: ${url}
-        Changed diff url: ${createToken(getURL, filePath)}?diff=1`;
+        Changed diff url: ${url}?diff=1`;
 
         if ( replaceResult.fuzzyReplacements.length > 0 ) {
             responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
