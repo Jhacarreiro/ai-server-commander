@@ -6,7 +6,9 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Fixed
+
+- `/api/restart` now closes the HTTP listener and waits for in-flight responses to drain before exiting, instead of force-exiting after 500 ms. A last-resort exit still applies if drain exceeds `RESTART_FORCE_EXIT_MS` (default 30000).
 
 ## [1.0.8] - 2026-07-12
 
