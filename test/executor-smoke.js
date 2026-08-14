@@ -30,6 +30,17 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const invalidCwd = parseRequest({ method: 'POST', body: { command: 'pwd', cwd: '/definitely/missing' }, query: {} });
     assert(invalidCwd.error && invalidCwd.status === 400, 'parseRequest rejects invalid cwd');
 
+    const bothFields = parseRequest({
+        method: 'POST',
+        body: { command: 'printf both_should_not_run', script: 'printf script_both_should_not_run' },
+        query: {}
+    });
+    assert(
+        bothFields.error && bothFields.status === 400 && bothFields.message === 'Provide either command or script, not both.',
+        'parseRequest rejects both command and script',
+        JSON.stringify(bothFields)
+    );
+
     const first = executeBounded({ activityId: 'test_first', command: 'sleep 5', cwd: process.cwd(), timeoutMs: 10000, shell: '/bin/sh' });
     const second = executeBounded({ activityId: 'test_second', command: 'sleep 5', cwd: process.cwd(), timeoutMs: 10000, shell: '/bin/sh' });
     await delay(150);

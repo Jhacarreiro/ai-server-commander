@@ -6,7 +6,13 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-No unreleased changes yet.
+### Changed
+
+- REST and MCP requests that supply both `command` and `script` now return HTTP 400 / JSON-RPC `-32602` instead of silently picking one field (REST previously preferred inline; MCP preferred script).
+
+### Added
+
+- Added REST and MCP smoke coverage for the both-fields rejection, including a live request/response transcript in the test output.
 
 ## [1.0.8] - 2026-07-12
 

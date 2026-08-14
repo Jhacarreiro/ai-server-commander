@@ -201,8 +201,8 @@ The primary tool is `run_terminal_command`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `command` | string | Exact command for inline mode. |
-| `script` | string | Multi-line script body. Supplying it defaults the mode to `script`. |
+| `command` | string | Exact command for inline mode. Mutually exclusive with `script`. |
+| `script` | string | Multi-line script body. Supplying it defaults the mode to `script`. Mutually exclusive with `command`. |
 | `mode` | `inline` or `script` | Optional explicit mode. |
 | `cwd` | string | Must be an existing readable directory. Invalid paths are rejected. |
 | `shell` | string | Script-mode shell, for example `/bin/sh`. |
@@ -365,6 +365,7 @@ The smoke suite covers:
 
 - bounded executor behavior;
 - REST GET/POST compatibility;
+- REST and MCP rejection of requests that supply both `command` and `script`;
 - multi-line scripts and request-size limits;
 - invalid working directories;
 - concurrency and targeted interruption;
