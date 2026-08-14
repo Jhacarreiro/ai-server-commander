@@ -189,6 +189,8 @@ Content-Type: application/json
 }
 ```
 
+Command execution accepts GET and POST only. Express would otherwise route `HEAD` onto the GET handler (RFC 9110 §9.2.1) and run `?command=` payloads from `curl -I`, link-checkers and uptime probes. `HEAD /api/runTerminalScript` now returns `405` with `Allow: GET, POST` and does not parse or execute. Documented GET/POST clients are unchanged. Monitors that treated a `200` from `HEAD` on the execute URL as liveness should switch to GET or POST, or probe a non-execute URL such as `/openapi.json`.
+
 ## Remote MCP clients
 
 The remote MCP endpoint is:
@@ -365,6 +367,7 @@ The smoke suite covers:
 
 - bounded executor behavior;
 - REST GET/POST compatibility;
+- HEAD rejection on execute routes without running the command;
 - multi-line scripts and request-size limits;
 - invalid working directories;
 - concurrency and targeted interruption;
@@ -385,6 +388,10 @@ Set `productionDomain` to the exact external HTTPS origin and forward `Host` and
 ### The MCP client asks to reconnect after an upgrade or restart
 
 Confirm that every release uses the same `OAUTH_STATE_PATH` and that the service user can read and write it. Upgrading from v1.0.7 or earlier requires one new authorization because those releases kept OAuth state only in memory. A missing, moved or deleted state file also requires reauthorization.
+
+### A HEAD probe of the execute URL returns 405
+
+That is expected. `/api/runTerminalScript` and `/v1/commands/execute` accept GET and POST only. Previous `HEAD` probes could return `200` after silently running `?command=`. Use GET or POST to execute, or probe `/openapi.json` for liveness.
 
 ### A command runs in the wrong directory
 
