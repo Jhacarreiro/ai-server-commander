@@ -54,13 +54,41 @@ const {
     assert.strictEqual(normalizePort('3000'), 3000);
     assert.strictEqual(normalizePort(3000), 3000);
     assert.strictEqual(normalizePort(' 08080 '), 8080);
+    assert.strictEqual(normalizePort('65535'), 65535);
+    console.log('PASS malformed ports such as 3000abc are rejected; zero-padded decimals remain valid');
+
+    const paddedPath = path.join(root, 'padded.json');
+    fs.writeFileSync(paddedPath, JSON.stringify({
+        port: '00001',
+        useLocalTunnel: false,
+        productionDomain: 'https://commander.example.com',
+        authToken: 'a'.repeat(64)
+    }));
+    assert.strictEqual(loadConfigFile(paddedPath).port, 1);
+    assert.strictEqual(validateConfig({
+        port: '09999',
+        useLocalTunnel: false,
+        productionDomain: 'https://commander.example.com',
+        authToken: 'a'.repeat(64)
+    }).port, 9999);
+    console.log('PASS config file and validateConfig accept zero-padded port strings');
+
+    const wizardPaddedPath = path.join(root, 'wizard-padded.json');
+    const paddedAnswers = ['00001', 'https://wizard.example.com'];
+    const paddedCreated = await createConfig({
+        configPath: wizardPaddedPath,
+        ask: async () => paddedAnswers.shift()
+    });
+    assert.strictEqual(paddedCreated.port, 1);
+    console.log('PASS wizard accepts zero-padded port string');
+
     for (const bad of ['3000abc', '1e3', '3000.7', 3000.7, '0', 0, '65536', '-1', '0x10', '', '   ']) {
         assert.throws(
             () => normalizePort(bad),
             /Configuration port must be an integer between 1 and 65535/
         );
     }
-    console.log('PASS malformed ports such as 3000abc are rejected; zero-padded decimals remain valid');
+    console.log('PASS malformed and out-of-range port values are rejected');
 
     const retryPath = path.join(root, 'retry.json');
     const retryAnswers = [
