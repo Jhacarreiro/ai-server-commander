@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const tokenStorePath = path.join(root, 'tokenStore.json');
 const backupPath = path.join(root, 'tokenStore.json.test-backup');
 const baseUrl = 'http://127.0.0.1:33142';
+let hadBackup = false;
 
 function assert(condition, label, details = '') {
     if (!condition) throw new Error(`${label}${details ? ': ' + details : ''}`);
@@ -14,14 +15,15 @@ function assert(condition, label, details = '') {
 }
 
 function backupTokenStore() {
-    if (fs.existsSync(tokenStorePath)) fs.copyFileSync(tokenStorePath, backupPath);
+    hadBackup = fs.existsSync(tokenStorePath);
+    if (hadBackup) fs.copyFileSync(tokenStorePath, backupPath);
 }
 
 function restoreTokenStore() {
     if (fs.existsSync(backupPath)) {
         fs.copyFileSync(backupPath, tokenStorePath);
         fs.unlinkSync(backupPath);
-    } else if (fs.existsSync(tokenStorePath)) {
+    } else if (!hadBackup && fs.existsSync(tokenStorePath)) {
         fs.unlinkSync(tokenStorePath);
     }
 }
