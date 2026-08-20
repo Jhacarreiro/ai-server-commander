@@ -17,11 +17,14 @@ function stringifyError(err) {
 
 function sanitizeMessage(message) {
     const text = String(message || "Error");
+    // Replace absolute paths without carving around delimiters like commas or
+    // colons: consume everything up to a quote, bracket or line break so
+    // `/srv/build,private/release.js` does not leave `,private[path]`.
     return text
-        // Windows drive paths: backslash, forward slash, spaces (C:\Program Files\..., C:/Users/...)
-        .replace(/[A-Za-z]:(?:[\\/][^\\/:*?"'<>|\r\n,]+)+/g, "[path]")
-        // POSIX absolute paths, including spaces (/srv/ai server/mission control.js)
-        .replace(/(?:\/[^\/:*?"'<>|\r\n,]+)+/g, "[path]")
+        // Windows drive paths (C:\…, C:/…, D:\…, with spaces/commas/colons)
+        .replace(/[A-Za-z]:(?:[\\/][^\r\n"'`\]\)]+)+/g, "[path]")
+        // POSIX absolute paths (with spaces, commas, colons)
+        .replace(/(?:\/[^\r\n"'`\]\)]+)+/g, "[path]")
         .slice(0, 300);
 }
 

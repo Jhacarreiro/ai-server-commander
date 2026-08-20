@@ -34,7 +34,9 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
-        log( 'Error reading or creating file:', err );
+        // Do not log the raw Error object: Node fs errors carry an enumerable
+        // `path` that survives JSON serialization via /api/logs.
+        log( 'Error reading or creating file:', err instanceof Error ? err.message : String( err ) );
     } finally {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
