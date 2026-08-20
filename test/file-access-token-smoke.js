@@ -12,6 +12,7 @@ const port = Number(process.env.TEST_PORT || 33139);
 const authToken = process.env.TEST_TOKEN || 't'.repeat(64);
 const baseUrl = `http://127.0.0.1:${port}`;
 let server;
+let hadBackup = false;
 
 function assert(condition, label, details = '') {
     if (!condition) throw new Error(`${label}${details ? ': ' + details : ''}`);
@@ -19,14 +20,15 @@ function assert(condition, label, details = '') {
 }
 
 function backupTokenStore() {
-    if (fs.existsSync(tokenStorePath)) fs.copyFileSync(tokenStorePath, backupPath);
+    hadBackup = fs.existsSync(tokenStorePath);
+    if (hadBackup) fs.copyFileSync(tokenStorePath, backupPath);
 }
 
 function restoreTokenStore() {
     if (fs.existsSync(backupPath)) {
         fs.copyFileSync(backupPath, tokenStorePath);
         fs.unlinkSync(backupPath);
-    } else if (fs.existsSync(tokenStorePath)) {
+    } else if (!hadBackup && fs.existsSync(tokenStorePath)) {
         fs.unlinkSync(tokenStorePath);
     }
 }
