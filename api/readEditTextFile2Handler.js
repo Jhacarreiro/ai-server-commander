@@ -140,8 +140,10 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    // Fix absolute paths for bwrap sandbox (HOME=/home/exec, workdir=/work):
+    // naive startsWith fails for /work vs /home/exec, so use path.isAbsolute.
+    if ( !path.isAbsolute( filePath ) ) {
+        filePath = path.join( currentDir, filePath );
     }
 
     let replaceResult;

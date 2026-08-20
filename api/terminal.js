@@ -50,11 +50,14 @@ function parseRequest(req) {
         }
     }
     if (mode === 'script') {
-        if (typeof script === 'undefined' || script === null || script === '') {
+        if (typeof script === 'undefined' || script === null) {
             return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
         }
         if (typeof script !== 'string') {
             return { error: true, status: 400, message: 'Script body must be a string, got ' + typeof script + '.' };
+        }
+        if (!script.trim()) {
+            return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
         }
     }
     if (mode === 'script' && Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BODY_BYTES) {

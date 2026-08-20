@@ -65,6 +65,10 @@ const SCRIPT_MISSING_MSG = 'Script body is required for script mode and must be 
             'script: body ' + JSON.stringify(bad) + ' -> type error, got ' + typeof bad, JSON.stringify(res));
     }
 
+    // --- script: whitespace-only must be treated as missing ---
+    assert(postScript({ script: '   ' }).error && postScript({ script: '   ' }).message === SCRIPT_MISSING_MSG, 'script: whitespace-only body -> missing message');
+    assert(postScript({ script: ' \t\n ' }).error && postScript({ script: ' \t\n ' }).message === SCRIPT_MISSING_MSG, 'script: whitespace with tabs/newlines -> missing message');
+
     console.log('All parse-request regression checks passed.');
 })().catch((err) => {
     console.error(err.stack || err.message);
