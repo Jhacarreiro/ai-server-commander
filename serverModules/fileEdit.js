@@ -21,6 +21,22 @@ const expandToFullLines = ( fileContent, startIndex, endIndex ) => {
 
 const parseConflicts = ( conflictText ) => {
   const conflicts = conflictText.match( conflictDelimiterRegex ) || [];
+  // Unterminated <<<<<<< HEAD without a closing >>>>>>> must not be silently ignored.
+  const startCount = ( conflictText.match( /<<<<<<< HEAD/g ) || [] ).length;
+  if ( startCount !== conflicts.length ) {
+    const excerpt = (() => {
+      // Find first start that is not part of a matched block.
+      let remaining = conflictText;
+      for ( const block of conflicts ) {
+        const idx = remaining.indexOf( block );
+        if ( idx >= 0 ) remaining = remaining.slice( 0, idx ) + remaining.slice( idx + block.length );
+      }
+      const idx = remaining.indexOf( "<<<<<<< HEAD" );
+      const snippet = idx >= 0 ? remaining.slice( idx, idx + 120 ) : remaining.slice( 0, 120 );
+      return snippet.length > 80 ? snippet.slice( 0, 80 ) + "..." : snippet;
+    })();
+    throw new Error("Malformed conflict block: missing closing >>>>>>> marker or ======= separator. Offending block: " + excerpt);
+  }
   return conflicts.flatMap( conflict => {
     const parts = conflict.split( "=======" );
     if (parts.length < 2) {
@@ -43,26 +59,43 @@ const applyReplacements = async ( fileContent, replacements ) => {
   let unsuccessfulReplacements = [];
   let fuzzyReplacements = [];
 
+  // Atomic validation: a mixed batch (valid entry followed by an empty
+  // originalText) would otherwise return a partially edited updatedContent
+  // with unsuccessfulReplacements. Pre-validate the whole batch so an invalid
+  // entry leaves updatedContent === originalContent.
+  // Empty originalText is the creation marker in the paired
+  // fix/no-empty-file-on-failed-edit contract (PR #33): on an empty file
+  // (fileContent === '') a literal "" means "insert initial content".
+  // Reject it for every other case, including null/undefined.
+  const preInvalid = [];
+  for ( const r of ( replacements || [] ) ) {
+    const o = r && r.originalText;
+    const rep = r && r.replacementText;
+    const isCreationMarker = o === "" && fileContent === "";
+    if (o == null || o === "") {
+      if (!isCreationMarker) preInvalid.push("Search text (originalText) must be a non-empty string.");
+      // creation marker itself falls through to replacement validation
+      if (!isCreationMarker) continue;
+    } else if (typeof o !== "string") {
+      preInvalid.push("Search text (originalText) must be a string.");
+      continue;
+    }
+    if (rep == null) preInvalid.push("Replacement text (replacementText) must be a string; use an empty string to explicitly delete matched text.");
+    else if (typeof rep !== "string") preInvalid.push("Replacement text (replacementText) must be a string.");
+  }
+  if ( preInvalid.length ) {
+    return { updatedContent: originalContent, unsuccessfulReplacements: preInvalid, fuzzyReplacements: [], originalContent };
+  }
+
   replacements.forEach( ( {
     originalText,
     replacementText
   } ) => {
-    // Empty/null search would match index 0 (String#indexOf("")) and prepend
-    // replacementText to the entire file — treat as an invalid replacement.
-    if (originalText == null || originalText === "") {
-      unsuccessfulReplacements.push("Search text (originalText) must be a non-empty string.");
-      return;
-    }
-    if (typeof originalText !== "string") {
-      unsuccessfulReplacements.push("Search text (originalText) must be a string.");
-      return;
-    }
-    // Nullish replacement is not an implicit delete; require an explicit empty string.
-    if (replacementText == null) {
-      unsuccessfulReplacements.push("Replacement text (replacementText) must be a string; use an empty string to explicitly delete matched text.");
-      return;
-    } else if (typeof replacementText !== "string") {
-      unsuccessfulReplacements.push("Replacement text (replacementText) must be a string.");
+    // Creation marker: empty originalText on an empty file is the
+    // explicit "insert initial content" path (see pre-validation comment);
+    // it does not go through the normal search/fuzzy logic.
+    if ( originalText === "" && originalContent === "" ) {
+      fileContent = replacementText;
       return;
     }
     // Initialize occurrences array
