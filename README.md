@@ -149,7 +149,7 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
-| `MAX_OAUTH_CLIENTS` | `200` | Hard cap on registered OAuth clients; further dynamic registrations are rejected with 429. |
+| `MAX_OAUTH_CLIENTS` | `200` | Hard cap on persisted registered OAuth clients; further dynamic registrations are rejected with 429. The cap survives restarts. To free slots, stop the server and remove the file at `OAUTH_STATE_PATH` (default `runtime/oauth-state.json`); this invalidates every registered client and issued token and requires each MCP client to re-register and re-authorize. |
 | `MAX_CLIENT_NAME_CHARS` | `128` | Maximum length of a dynamically registered OAuth client name; longer names are truncated. |
 | `SHELL` | Host default | Shell used for inline execution and as script-mode fallback. |
 | `NODE_ENV` | unset | Standard Node environment label. |
@@ -387,6 +387,8 @@ Set `productionDomain` to the exact external HTTPS origin and forward `Host` and
 ### The MCP client asks to reconnect after an upgrade or restart
 
 Confirm that every release uses the same `OAUTH_STATE_PATH` and that the service user can read and write it. Upgrading from v1.0.7 or earlier requires one new authorization because those releases kept OAuth state only in memory. A missing, moved or deleted state file also requires reauthorization.
+
+Clients are capped at `MAX_OAUTH_CLIENTS` (default `200`) and the cap persists at `OAUTH_STATE_PATH`. To recover from `429 too_many_clients`, stop the server and delete that file; the next start recreates an empty store but **invalidates every registered client and every issued access/refresh token**, so each MCP client must re-register and re-authorize.
 
 ### A command runs in the wrong directory
 

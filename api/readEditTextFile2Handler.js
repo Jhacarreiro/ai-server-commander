@@ -22,34 +22,32 @@ const {
 const path = require('node:path');
 
 const replaceTextInSection = async ( filePath, replacements ) => {
-    let fileHandle;
-    let fileContent = '';
-
     // The file must exist regardless of mode: a missing file cannot be edited,
     // and creating one implicitly would leave an empty artifact behind.
     if ( !fs.existsSync( filePath ) ) {
         throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' );
     }
 
+    let fileHandle;
     try {
         fileHandle = await fs.promises.open( filePath, 'r+' ); // read-write; never creates files
-        fileContent = await fileHandle.readFile( 'utf8' );
+        const fileContent = await fileHandle.readFile( 'utf8' );
+        const result = await mergeText( fileContent, replacements );
+        // Keep the same descriptor for the write: truncate + write at 0 so a
+        // concurrent delete/replace of the pathname cannot redirect the write
+        // to a different inode. writeFile on a handle does not create a new path.
+        await fileHandle.truncate( 0 );
+        await fileHandle.writeFile( result.updatedContent, 'utf8' );
+        return result;
     } catch ( err ) {
-        log( 'Error reading file:', err );
-        // Propagate the failure: if the open fails (e.g. the file disappeared
-        // between the existsSync check and the open), continuing with an empty
-        // buffer would let the later write recreate or truncate the file.
+        // Do not leak absolute filesystem paths via the shared /api/logs
+        // buffer (Node ENOENT/EACCES errors carry an enumerable `path`); log
+        // only the message text server-side.
+        log( 'Error reading file:', err instanceof Error ? err.message : String( err ) );
         throw err;
     } finally {
-        if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
+        if ( fileHandle !== undefined ) await fileHandle.close();
     }
-
-
-    const result = await mergeText( fileContent, replacements );
-
-    await fs.promises.writeFile( filePath, result.updatedContent );
-
-    return result;
 };
 
 /**
@@ -218,17 +216,20 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     } catch ( error ) {
         console.error( error );
         const logData = {
-            error: error.message,
+            error: error instanceof Error ? error.message : String( error ),
             request: req.body || req.query,
             filePath: filePath || 'N/A',
             fileContentBefore: replaceResult?.originalContent || 'N/A',
             fileContentAfter: replaceResult?.updatedContent || 'N/A'
         };
         // TODO no such dir fix
-        // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\n', 'utf8' );
-        // Never leak the stack trace to clients; it exposes server-side paths and internals.
+        // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\\n', 'utf8' );
+        // Never leak filesystem paths or stacks to clients; keep details in server logs.
+        const msg = error instanceof Error ? error.message : String( error );
+        const clientSafe = typeof msg === 'string' && msg.startsWith('File does not exist');
+        log( 'read-or-edit-file failed', clientSafe ? msg : 'Internal server error.' );
         res.status( 500 ).json( {
-            error: error instanceof Error ? error.message : String( error )
+            error: clientSafe ? msg : 'Internal server error.'
         } );
     }
 };
