@@ -19,10 +19,14 @@ const blockedCommandPatterns = [
     // defeats rm's own failsafe; glob/expansion suffixes (/*, /?, /$x) and
     // command chaining (/; /&& /|) previously slipped past the (?:\s|$) anchor.
     /\brm\b[^;\n|&]*?--no-preserve-root/i,
-    // Root operand: keep original (?:\s|$) so extra text or a newline after
-    // "/" stays blocked, and also catch chaining/glob/expansion suffixes.
-    /\brm\s+-rf?\b[^;\n|&]*?\/(?:\s|$|[;&|*?[]|\$)/i,
-    /\brm\s+(?:--recursive\b[^;\n|&]*?--force|--force\b[^;\n|&]*?--recursive)\b[^;\n|&]*?\/(?:\s|$|[;&|*?[]|\$)/i,
+    // Root operand: the slash must START a path token (preceded by
+    // whitespace) so deleting "build/" or a nested path is not flagged,
+    // while "/", "/*", "/?", "/$x" and chaining ("/;", "/&&") all match.
+    // Recursive+force detection is flag-order-independent: lookaheads accept
+    // any short bundle containing r/f (-rf, -fr, -f -r, -r -f) or the long
+    // forms (--recursive/--force), in any order. The previous -rf-first-only
+    // pattern let "rm -fr /" and "rm -f -r /" through.
+    /\brm\b(?=[^;\n|&]*\s(?:-[a-z]*r|--recursive))(?=[^;\n|&]*\s(?:-[a-z]*f|--force))[^;\n|&]*?\s\/(?:\s|$|[;&|*?[]|\$)/i,
     /\$\(\s*rm\b/,
     /`\s*rm\b/,
     /\bmkfs(?:\.|\s|$)/i,
@@ -35,7 +39,7 @@ const blockedCommandPatterns = [
     /\breboot\b/i,
     /\bpoweroff\b/i,
     /\bhalt\b/i,
-    /\bpasswd\b/i,
+    /\b(?:^|[\s;|&])passwd\b/i,
     /\buserdel\b/i,
     /\bgroupdel\b/i,
     /chmod\s+-R\s+777\s+\//i,
