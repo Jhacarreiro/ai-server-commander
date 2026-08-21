@@ -1,0 +1,45 @@
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  review_progress: true
+  slop_detection:
+    enabled: true
+    label: slop
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+  pre_merge_checks:
+    custom_checks:
+      - name: Security and secrets
+        mode: error
+        instructions: >-
+          Fail only when the PR introduces or exposes an actual credential, token,
+          password, private key, secret, authentication bypass, or a clear unsafe
+          trust-boundary regression where untrusted input reaches shell execution,
+          filesystem paths, URLs, or authorization-sensitive operations without
+          appropriate validation. Do not fail for documentation placeholders,
+          redacted examples, tests using obviously fake values, or pre-existing
+          issues outside the changed lines.
+      - name: Behavioral changes have tests
+        mode: error
+        instructions: >-
+          If the PR changes executable behavior, fixes a bug, or adds a feature,
+          require automated tests that exercise the changed behavior and the
+          important failure or edge case addressed by the PR. Pass for docs-only,
+          comments-only, formatting-only, dependency-only, CI-only changes, or when
+          the repository genuinely has no applicable automated test framework.
+          Do not require duplicate tests when existing tests already cover the new
+          behavior and are updated as needed.
+      - name: Dependency and lockfile integrity
+        mode: error
+        instructions: >-
+          When dependency manifests are changed, require the corresponding lockfile
+          to be updated when this repository tracks one, and reject inconsistent or
+          unrelated lockfile churn. Fail on accidental dependency downgrades,
+          unexpected major-version changes not described by the PR, or dependency
+          changes that make the manifest and lockfile disagree. Pass when the repo
+          intentionally does not track a lockfile or the PR does not alter dependencies.
