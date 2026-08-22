@@ -26,7 +26,11 @@ function setCors(res) {
 function parseRequest(req) {
     const query = req.query || {};
     const body = req.body || {};
-    const options = req.method === 'GET' ? query : body;
+    // POST already falls back to query.command; apply the same fallback to
+    // the other options so ?command=pwd&cwd=/tmp&timeoutMs=123 behaves
+    // consistently instead of honoring only command and dropping the rest.
+    const merged = { ...query, ...body };
+    const options = req.method === 'POST' ? merged : (req.method === 'GET' ? query : body);
 
     let mode = 'inline';
     if (req.method !== 'GET') {
