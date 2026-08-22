@@ -27,6 +27,29 @@ const {
     assert.strictEqual(loaded.useLocalTunnel, false);
     console.log('PASS existing configuration loads and normalizes');
 
+    const bomPath = path.join(root, 'bom-config.json');
+    const bomSource = {
+        port: 3200,
+        useLocalTunnel: false,
+        productionDomain: 'https://bom.example.com',
+        authToken: 'c'.repeat(64),
+        mcpToken: 'd'.repeat(64)
+    };
+    fs.writeFileSync(bomPath, Buffer.concat([
+        Buffer.from([0xEF, 0xBB, 0xBF]),
+        Buffer.from(JSON.stringify(bomSource), 'utf8')
+    ]));
+    const bomBytes = fs.readFileSync(bomPath);
+    assert.ok(bomBytes[0] === 0xEF && bomBytes[1] === 0xBB && bomBytes[2] === 0xBF);
+    assert.throws(() => JSON.parse(bomBytes.toString('utf8')));
+    const bomLoaded = loadConfigFile(bomPath);
+    assert.strictEqual(bomLoaded.port, 3200);
+    assert.strictEqual(bomLoaded.productionDomain, 'https://bom.example.com');
+    assert.strictEqual(bomLoaded.useLocalTunnel, false);
+    assert.strictEqual(bomLoaded.authToken, bomSource.authToken);
+    assert.strictEqual(bomLoaded.mcpToken, bomSource.mcpToken);
+    console.log('PASS UTF-8 BOM-prefixed configuration loads and preserves validated settings');
+
     assert.throws(() => validateConfig({
         port: 3000,
         useLocalTunnel: true,
