@@ -374,7 +374,7 @@ The smoke suite covers:
 - concurrency and targeted interruption;
 - MCP initialization, advertised protocol version, empty-batch rejection and execution;
 - OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
-- native setup and Firebase Admin compatibility;
+- native setup and Firestore service-account compatibility;
 - `SAFE_MODE` results;
 - OpenAPI generation and version alignment.
 
