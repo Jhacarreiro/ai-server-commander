@@ -1,6 +1,6 @@
 {
   "name": "ai-server-commander",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Self-hosted REST/OpenAPI and remote MCP bridge for bounded AI-assisted terminal execution.",
   "main": "main.js",
   "scripts": {
