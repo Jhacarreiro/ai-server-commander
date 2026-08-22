@@ -135,11 +135,14 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             filePath
         }; // Mimic the structure expected by replaceTextInSection
     } else if ( req.method === 'POST' ) {
-        filePath = req.body.filePath; // Get the file path from request body
-        body = req.body; // Use the full request body for POST requests
+        body = (typeof req.body === 'object' && req.body !== null) ? req.body : {};
+        filePath = body.filePath;
     }
 
     const currentDir = await getCurrentDirectory();
+    if ( typeof filePath !== 'string' || !filePath.trim() ) {
+        return res.status( 400 ).json( { error: 'File path is required.' } );
+    }
     if ( !filePath.startsWith( currentDir ) ) {
         filePath = currentDir + '/' + filePath;
     }
