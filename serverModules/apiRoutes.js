@@ -5,7 +5,6 @@ const createMcpHandler = require('../api/mcp');
 const { addOAuthRoutes } = require('../api/oauth');
 
 const exitApplicationHandler = require('../api/exitApplicationHandler');
-const {initDB} = require("./firebaseDB");
 
 module.exports = {
     addApi: (app, config, getURL, close) => {
