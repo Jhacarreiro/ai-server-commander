@@ -148,7 +148,23 @@ module.exports = function createMcpHandler() {
         if (method === 'tools/call') {
             if (!params || params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool');
 
-            const args = params.arguments && typeof params.arguments === 'object' ? { ...params.arguments } : {};
+            let args = params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? { ...params.arguments } : {};
+            if (typeof params.arguments === 'string' && params.arguments.trim()) {
+                // MCP schema allows arguments as a JSON string ({ } | string);
+                // many SDKs send it that way. Silently dropping it made every
+                // such call fail with "Command parameter is required".
+                try {
+                    const parsed = JSON.parse(params.arguments);
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = { ...parsed };
+                    else return jsonRpcError(id, -32602, 'arguments must be an object or a JSON object string');
+                } catch {
+                    return jsonRpcError(id, -32602, 'arguments JSON string is not valid JSON');
+                }
+            } else if (Array.isArray(params.arguments)) {
+                return jsonRpcError(id, -32602, 'arguments must be an object or a JSON object string, not an array');
+            } else if (params.arguments !== undefined && params.arguments !== null && typeof params.arguments !== 'object') {
+                return jsonRpcError(id, -32602, 'arguments must be an object or a JSON object string, not ' + typeof params.arguments);
+            }
             if (!args.mode && typeof args.script === 'string') args.mode = 'script';
             const parsed = parseRequest({ method: 'POST', body: args, query: {} });
             if (parsed.error) return jsonRpcError(id, -32602, parsed.message);
