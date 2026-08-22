@@ -11,14 +11,15 @@
     "test:routes": "node test/routes-smoke.js",
     "test:openapi": "node test/openapi-smoke.js",
     "test:executor": "node test/executor-smoke.js",
-    "test:all": "npm run test:executor && npm run test:setup && npm run test:firebase && npm run test:routes && npm run test:mcp && npm run test:oauth && npm run test:openapi && npm run test:cors && npm run test:docs",
-    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check api/oauth.js && node --check serverModules/auth.js && node --check serverModules/configHandler.js && node --check serverModules/firebaseDB.js && node --check serverModules/oauthStore.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js",
+    "test:all": "npm run test:executor && npm run test:setup && npm run test:firebase && npm run test:routes && npm run test:mcp && npm run test:oauth && npm run test:openapi && npm run test:cors && npm run test:docs && npm run test:fileaccess",
+    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check api/oauth.js && node --check serverModules/auth.js && node --check serverModules/configHandler.js && node --check serverModules/firebaseDB.js && node --check serverModules/oauthStore.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js && node --check serverModules/fileAccessHandler.js",
     "test:mcp": "node test/mcp-smoke.js",
     "test:docs": "node test/docs-smoke.js",
     "test:setup": "node test/setup-smoke.js",
     "test:firebase": "node test/firebase-smoke.js",
     "test:oauth": "node test/oauth-persistence-smoke.js",
-    "test:cors": "node test/cors-preflight-smoke.js"
+    "test:cors": "node test/cors-preflight-smoke.js",
+    "test:fileaccess": "node test/file-access-token-smoke.js"
   },
   "keywords": [
     "mcp",

@@ -19,16 +19,30 @@ const writeToTokenStore = (tokenStore) => {
     fs.writeFileSync(tokenStorePath, JSON.stringify(tokenStore, null, 2), "utf8");
 };
 
+// A token whose expiryDate is missing or unparseable must FAIL CLOSED
+// (treated as expired). new Date(garbage) is Invalid Date, and every
+// comparison against Invalid Date is false - a corrupt store entry would
+// otherwise be served forever with no expiry.
+function isExpired(tokenInfo, now = new Date()) {
+    const expiry = new Date(tokenInfo && tokenInfo.expiryDate);
+    return !(expiry instanceof Date) || Number.isNaN(expiry.getTime()) || expiry < now;
+}
+
 
 module.exports.createToken = (getURL, filePath) => {
     const tokenStore = readTokenStore();
     let token = '';
     let existingTokenFound = false;
 
-    // Check for an existing token for the filePath
+    // Check for an existing token for the filePath.
+    // Guard malformed (null/non-object) entries before reading filePath so
+    // createToken can still clean them up instead of throwing.
     Object.keys(tokenStore).forEach(existingToken => {
         const tokenInfo = tokenStore[existingToken];
-        if (tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
+        if (!tokenInfo || typeof tokenInfo !== 'object') {
+            return;
+        }
+        if (tokenInfo.filePath === filePath && !isExpired(tokenInfo)) {
             // Extend the existing token's expiry date
             tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
             token = existingToken;
@@ -42,9 +56,9 @@ module.exports.createToken = (getURL, filePath) => {
         tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
     }
 
-    // Filter out expired tokens
+    // Filter out expired tokens (fail-closed on corrupt entries)
     Object.keys(tokenStore).forEach(token => {
-        if (new Date(tokenStore[token].expiryDate) < new Date()) {
+        if (isExpired(tokenStore[token])) {
             delete tokenStore[token];
         }
     });
@@ -66,7 +80,7 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     const tokenInfo = tokenStore[token];
-    if (new Date(tokenInfo.expiryDate) < new Date()) {
+    if (isExpired(tokenInfo)) {
         return res.status(410).send('Token has expired.');
     }
 
