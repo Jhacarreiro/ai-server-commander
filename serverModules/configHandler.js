@@ -56,7 +56,12 @@ function validateConfig(input) {
 }
 
 function loadConfigFile(configPath = DEFAULT_CONFIG_PATH) {
-    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    // Strip a UTF-8 BOM: 'UTF-8 with BOM' saves (Windows Notepad, some
+    // editors) would otherwise make JSON.parse throw a cryptic
+    // "Unexpected token" at startup with no way to recover.
+    let raw = fs.readFileSync(configPath, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const parsed = JSON.parse(raw);
     return validateConfig(parsed);
 }
 
