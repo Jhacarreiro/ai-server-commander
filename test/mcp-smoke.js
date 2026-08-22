@@ -299,6 +299,24 @@ function assert(condition, label, details = '') {
             status: response.status,
             error: response.body.error
         }, null, 2));
+
+        response = await rpc({
+            jsonrpc: '2.0', id: 12, method: 'tools/call',
+            params: { name: 'run_terminal_command', arguments: '["printf","x"]' }
+        });
+        assert(
+            response.status === 200 &&
+            response.body.error &&
+            response.body.error.code === -32602 &&
+            /must be an object or a JSON object string/i.test(response.body.error.message),
+            'MCP rejects non-object JSON-string arguments',
+            JSON.stringify(response.body)
+        );
+        console.log('LIVE MCP non-object JSON-string arguments\n' + JSON.stringify({
+            request: { arguments: '["printf","x"]' },
+            status: response.status,
+            error: response.body.error
+        }, null, 2));
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();

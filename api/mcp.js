@@ -155,6 +155,7 @@ module.exports = function createMcpHandler() {
                 // MCP schema allows arguments as a JSON string ({ } | string);
                 // many SDKs send it that way. Silently dropping it made every
                 // such call fail with "Command parameter is required".
+                // Accept only a JSON object string as a compatibility extension.
                 try {
                     const parsed = JSON.parse(params.arguments);
                     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = { ...parsed };
