@@ -126,6 +126,23 @@ function assert(condition, label, details = '') {
 
         response = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
         assert(response.status === 200 && response.body.result.serverInfo.version && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP initialize');
+        assert(response.body.result.protocolVersion === '2025-03-26', 'MCP initialize advertises the server protocol version');
+
+        response = await rpc({ jsonrpc: '2.0', id: 11, method: 'initialize', params: { protocolVersion: '2024-11-05' } });
+        assert(response.status === 200 && response.body.result.protocolVersion === '2025-03-26', 'MCP initialize does not echo an older client protocol version');
+
+        response = await rpc({ jsonrpc: '2.0', id: 12, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
+        assert(response.status === 200 && response.body.result.protocolVersion === '2025-03-26', 'MCP initialize does not echo a newer client protocol version');
+
+        response = await rpc({ jsonrpc: '2.0', id: 13, method: 'initialize', params: {} });
+        assert(response.status === 200 && response.body.result.protocolVersion === '2025-03-26', 'MCP initialize defaults to the server protocol version');
+
+        response = await rpc([]);
+        assert(response.status === 400 && response.body && response.body.error && response.body.error.code === -32600, 'empty MCP batch is a JSON-RPC invalid request');
+        assert(/empty batch/i.test(String(response.body.error.message || '')), 'empty MCP batch error names the invalid input');
+
+        response = await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+        assert(response.status === 202 && response.body === '', 'MCP notification-only POST remains HTTP 202');
 
         response = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
         const listedTool = response.body.result.tools[0];
