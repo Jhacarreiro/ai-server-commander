@@ -1,12 +1,5 @@
 const crypto = require('crypto');
 const { validateAccessToken, protectedResourceMetadataUrl, expectedResource } = require('../api/oauth');
-const crypto = require('crypto');
-
-function safeEqual(a, b) {
-    const left = Buffer.from(String(a ?? ''));
-    const right = Buffer.from(String(b ?? ''));
-    return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
-}
 
 function safeEqual(a, b) {
     const left = Buffer.from(String(a ?? ''));
