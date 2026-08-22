@@ -149,6 +149,19 @@ function assert(condition, label, details = '') {
     // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
     r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
     assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
+
+    const bothFieldsBody = { command: 'printf rest_both_should_not_run', script: 'printf script_both_should_not_run' };
+    r = await request('POST', '/v1/commands/execute', bothFieldsBody);
+    assert(
+      r.status === 400 && r.body && r.body.message === 'Provide either command or script, not both.',
+      'POST rejects both command and script',
+      JSON.stringify(r.body)
+    );
+    console.log('LIVE REST both-fields POST /v1/commands/execute\n' + JSON.stringify({
+      request: bothFieldsBody,
+      status: r.status,
+      body: r.body
+    }, null, 2));
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
