@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const port = Number(process.env.TEST_PORT || 33100);
 const token = process.env.TEST_TOKEN || 't'.repeat(64);
+const mcpToken = process.env.TEST_MCP_TOKEN || 'c'.repeat(64);
 const configPath = path.join(root, 'config.json');
 const backupPath = path.join(root, 'config.json.test-backup');
 let server;
@@ -17,6 +18,7 @@ function writeTestConfig() {
         useLocalTunnel: false,
         productionDomain: `http://localhost:${port}`,
         authToken: token,
+        mcpToken,
         localTunnelSubdomain: null
     }, null, 2) + '\n');
 }
@@ -65,7 +67,7 @@ function rpc(message) {
         const req = http.request({
             hostname: '127.0.0.1',
             port,
-            path: `/mcp?token=${encodeURIComponent(token)}`,
+            path: `/mcp?token=${encodeURIComponent(mcpToken)}`,
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
             timeout: 12000
@@ -123,6 +125,20 @@ function assert(condition, label, details = '') {
 
         response = await request('POST', '/mcp', { jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
         assert(response.status === 401 && String(response.headers['www-authenticate']).includes('resource_metadata=') && String(response.headers['www-authenticate']).includes('scope="terminal"'), 'MCP unauthorized challenge advertises OAuth metadata and scope');
+
+        const initializeBody = { jsonrpc: '2.0', id: 10, method: 'initialize', params: { protocolVersion: '2025-03-26' } };
+
+        response = await request('POST', '/mcp', initializeBody, { Authorization: `Bearer ${mcpToken}` });
+        assert(response.status === 200 && response.body.result && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP Bearer pre-shared token');
+
+        response = await request('POST', '/mcp', initializeBody, { Authorization: `Bearer ${'0'.repeat(64)}` });
+        assert(response.status === 401, 'MCP Bearer rejects wrong token');
+
+        response = await request('POST', '/mcp', initializeBody, { Authorization: `Basic ${mcpToken}` });
+        assert(response.status === 401, 'MCP non-Bearer scheme is rejected');
+
+        response = await request('POST', `/mcp?token=${encodeURIComponent(mcpToken)}`, initializeBody);
+        assert(response.status === 200 && response.body.result && response.body.result.serverInfo, 'MCP query token still works');
 
         response = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
         assert(response.status === 200 && response.body.result.serverInfo.version && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP initialize');
