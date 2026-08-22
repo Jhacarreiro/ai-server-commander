@@ -149,6 +149,19 @@ function assert(condition, label, details = '') {
     // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
     r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
     assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
+
+    const noticeOkPrefix = 'routes-smoke-notice-ok-';
+    r = await request('POST', '/api/notices', { text: noticeOkPrefix + 'x'.repeat(8192 - noticeOkPrefix.length) });
+    if (r.body && typeof r.body === 'object' && r.body.message) {
+      assert((r.status === 200 || r.status === 201) && String(r.body.message).length > 0, 'notice text at 8192 is accepted', JSON.stringify(r.body));
+    } else {
+      assert(r.status === 200 || r.status === 201, 'notice text at 8192 is accepted', String(r.status));
+    }
+
+    const noticeOverPrefix = 'routes-smoke-notice-over-';
+    r = await request('POST', '/api/notices', { text: noticeOverPrefix + 'x'.repeat(8193 - noticeOverPrefix.length) });
+    assert(r.status === 400 && r.body && String(r.body.message || '').includes('8192'), 'notice text over 8192 is rejected', JSON.stringify(r.body));
+
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
