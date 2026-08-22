@@ -59,6 +59,35 @@ function request(method, pathName, body) {
   });
 }
 
+// Like request(), but sends a raw (possibly malformed) JSON body.
+function rawRequest(method, pathName, rawBody) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: pathName,
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(rawBody !== undefined ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(rawBody) } : {})
+      },
+      timeout: 12000
+    }, (res) => {
+      let text = '';
+      res.on('data', (chunk) => { text += chunk; });
+      res.on('end', () => {
+        let parsed = text;
+        try { parsed = JSON.parse(text); } catch (_) {}
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('request timeout')));
+    req.on('error', reject);
+    if (rawBody !== undefined) req.write(rawBody);
+    req.end();
+  });
+}
+
 async function waitForServer(logPath) {
   const started = Date.now();
   while (Date.now() - started < 10000) {
@@ -111,6 +140,15 @@ function assert(condition, label, details = '') {
 
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'sleep 3', timeoutMs: 500 });
     assert(r.status === 200 && r.body.timedOut === true, 'timeout returns timedOut true', JSON.stringify(r.body));
+
+    // Body-parse error class: malformed JSON is a client (400) error and must
+    // carry the specific message, not the generic 500 text.
+    r = await rawRequest('POST', '/api/runTerminalScript', '{"mode":"inline","command":');
+    assert(r.status === 400 && r.body.error === 'Invalid request body.', 'malformed JSON body returns 400 with Invalid request body', JSON.stringify(r.body));
+
+    // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
+    r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
+    assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
