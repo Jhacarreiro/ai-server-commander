@@ -131,6 +131,10 @@ class OAuthStore {
         return this.data.clients[clientId] || null;
     }
 
+    getClientCount() {
+        return Object.keys(this.data.clients).length;
+    }
+
     setClient(client) {
         this.data.clients[client.client_id] = { ...client };
         this.persist();
