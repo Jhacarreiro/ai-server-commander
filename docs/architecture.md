@@ -35,7 +35,7 @@ Remote MCP client ── OAuth/token ───── MCP route ────┘  
 
 1. The client discovers protected-resource and authorization-server metadata.
 2. It authenticates with OAuth or a configured pre-shared MCP token.
-3. `api/mcp.js` exposes `run_terminal_command` with input/output schemas, annotations and security metadata.
+3. `api/mcp.js` advertises MCP protocol version `2025-03-26`, rejects empty JSON-RPC batches, and exposes `run_terminal_command` with input/output schemas, annotations and security metadata.
 4. Tool arguments pass through the same parser and executor as REST.
 5. The result contains both text content for backward compatibility and `structuredContent` matching `outputSchema`.
 

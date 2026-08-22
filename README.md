@@ -197,6 +197,10 @@ The remote MCP endpoint is:
 https://commander.example.com/mcp
 ```
 
+The server implements MCP protocol version `2025-03-26`. `initialize` always returns that version and does not echo a different client-requested version. Clients that cannot continue on `2025-03-26` disconnect during negotiation, which matches the MCP lifecycle rules.
+
+An empty JSON-RPC batch (`[]`) is invalid and returns HTTP 400 with JSON-RPC `-32600`. A POST that contains only notifications (no `id`) still returns HTTP 202 with no body.
+
 The primary tool is `run_terminal_command`.
 
 | Field | Type | Notes |
@@ -368,7 +372,7 @@ The smoke suite covers:
 - multi-line scripts and request-size limits;
 - invalid working directories;
 - concurrency and targeted interruption;
-- MCP initialization, metadata and execution;
+- MCP initialization, advertised protocol version, empty-batch rejection and execution;
 - OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
 - native setup and Firebase Admin compatibility;
 - `SAFE_MODE` results;
@@ -385,6 +389,10 @@ Set `productionDomain` to the exact external HTTPS origin and forward `Host` and
 ### The MCP client asks to reconnect after an upgrade or restart
 
 Confirm that every release uses the same `OAUTH_STATE_PATH` and that the service user can read and write it. Upgrading from v1.0.7 or earlier requires one new authorization because those releases kept OAuth state only in memory. A missing, moved or deleted state file also requires reauthorization.
+
+### The MCP client disconnects during initialize
+
+The server only implements MCP protocol version `2025-03-26` and always returns that version from `initialize`. A client that cannot continue on `2025-03-26` is expected to disconnect. Confirm the client supports that version rather than expecting the server to echo an older or newer request.
 
 ### A command runs in the wrong directory
 
