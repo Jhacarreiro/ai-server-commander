@@ -45,4 +45,4 @@ The server rejects malformed or symlinked OAuth state files rather than silently
 
 ## Dependency findings
 
-The project may retain dependency advisories when the only automated fix is breaking or invalid. v1.0.8 removes all known high and critical runtime audit findings. Remaining moderate Google/Firebase advisories currently have no valid forward-compatible automated fix and are monitored rather than handled with `npm audit fix --force`.
+The project does not treat a green high-severity audit gate as sufficient for release. The current runtime dependency graph uses `@google-cloud/firestore` directly and has zero known production advisories under `npm audit --omit=dev`; new advisories should be investigated and removed or explicitly documented before release rather than hidden with `npm audit fix --force`.
