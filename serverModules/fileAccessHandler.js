@@ -19,32 +19,41 @@ const writeToTokenStore = (tokenStore) => {
     fs.writeFileSync(tokenStorePath, JSON.stringify(tokenStore, null, 2), "utf8");
 };
 
+// A token whose expiryDate is missing or unparseable must FAIL CLOSED
+// (treated as expired). new Date(garbage) is Invalid Date, and every
+// comparison against Invalid Date is false - a corrupt store entry would
+// otherwise be served forever with no expiry.
+function isExpired(tokenInfo, now = new Date()) {
+    const expiry = new Date(tokenInfo && tokenInfo.expiryDate);
+    return !(expiry instanceof Date) || Number.isNaN(expiry.getTime()) || expiry < now;
+}
+
 
 module.exports.createToken = (getURL, filePath) => {
     const tokenStore = readTokenStore();
-    let token = '';
-    let existingTokenFound = false;
 
-    // Check for an existing token for the filePath
+    // Rotate: revoke any prior token for this file and mint a fresh one.
+    // Reusing + sliding-extending the same token meant a captured share URL
+    // stayed valid indefinitely (every edit refreshed its 10-min TTL) and
+    // there was no way to invalidate a leaked link.
+    // Guard malformed (null/non-object) entries before reading filePath so
+    // one corrupt entry cannot abort token creation.
     Object.keys(tokenStore).forEach(existingToken => {
         const tokenInfo = tokenStore[existingToken];
-        if (tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
-            // Extend the existing token's expiry date
-            tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
-            token = existingToken;
-            existingTokenFound = true;
+        if (!tokenInfo || typeof tokenInfo !== 'object') {
+            return;
+        }
+        if (tokenInfo.filePath === filePath) {
+            delete tokenStore[existingToken];
         }
     });
 
-    if (!existingTokenFound) {
-        // Create a new token if none exists for the filePath
-        token = crypto.randomBytes(20).toString('hex');
-        tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
-    }
+    const token = crypto.randomBytes(20).toString('hex');
+    tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
 
-    // Filter out expired tokens
+    // Filter out expired tokens (fail-closed on corrupt entries)
     Object.keys(tokenStore).forEach(token => {
-        if (new Date(tokenStore[token].expiryDate) < new Date()) {
+        if (isExpired(tokenStore[token])) {
             delete tokenStore[token];
         }
     });
@@ -66,7 +75,7 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     const tokenInfo = tokenStore[token];
-    if (new Date(tokenInfo.expiryDate) < new Date()) {
+    if (isExpired(tokenInfo)) {
         return res.status(410).send('Token has expired.');
     }
 
