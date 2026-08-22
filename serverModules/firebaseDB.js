@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const admin = require('firebase-admin');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
 
 function loadServiceAccount() {
     try {
@@ -9,15 +9,22 @@ function loadServiceAccount() {
     }
 }
 
-function createFirebaseRepository({ adminModule = admin, credentials = loadServiceAccount() } = {}) {
+function createFirebaseRepository({
+    FirestoreClass = Firestore,
+    fieldValue = FieldValue,
+    credentials = loadServiceAccount()
+} = {}) {
     let db = null;
 
     function initDB() {
         if (!credentials) return false;
-        if (!Array.isArray(adminModule.apps) || adminModule.apps.length === 0) {
-            adminModule.initializeApp({ credential: adminModule.credential.cert(credentials) });
-        }
-        db = adminModule.firestore();
+        db = new FirestoreClass({
+            projectId: credentials.project_id,
+            credentials: {
+                client_email: credentials.client_email,
+                private_key: credentials.private_key
+            }
+        });
         return true;
     }
 
@@ -35,7 +42,7 @@ function createFirebaseRepository({ adminModule = admin, credentials = loadServi
             description,
             headHtml: headHtml || '',
             bodyHtml: bodyHtml || '',
-            createdAt: adminModule.firestore.FieldValue.serverTimestamp()
+            createdAt: fieldValue.serverTimestamp()
         };
         const docRef = await requireDB().collection('Apps').add(newAppData);
         return { id: docRef.id, privateId };

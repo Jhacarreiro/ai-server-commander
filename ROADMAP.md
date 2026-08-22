@@ -66,7 +66,7 @@ Add configurable:
 
 ### Dependency maintenance
 
-The high-severity LocalTunnel and setup dependency chains were removed in v1.0.8, and Firebase Admin moved to the latest Node 20-compatible major. Continue monitoring the remaining moderate Google/Firebase transitive advisories and upgrade when forward-compatible upstream fixes exist.
+The high-severity LocalTunnel and setup dependency chains were removed in v1.0.8. The runtime now uses the direct `@google-cloud/firestore` client instead of the broader Firebase Admin package, eliminating the unused Storage dependency chain; keep runtime dependencies on supported Node 20-compatible releases and require a clean production audit before release.
 
 ## Later possibilities
 
