@@ -49,7 +49,7 @@ function request(method, pathName, body) {
       res.on('end', () => {
         let parsed = text;
         try { parsed = JSON.parse(text); } catch (_) {}
-        resolve({ status: res.statusCode, body: parsed });
+        resolve({ status: res.statusCode, headers: res.headers, body: parsed });
       });
     });
     req.on('timeout', () => req.destroy(new Error('request timeout')));
@@ -149,6 +149,19 @@ function assert(condition, label, details = '') {
     // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
     r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
     assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
+
+    const probePath = path.join('/tmp', `asc-head-no-exec-${process.pid}`);
+    const activityPath = path.join(root, 'runtime', 'activity', 'global.jsonl');
+    fs.rmSync(probePath, { force: true });
+    const activityBefore = fs.existsSync(activityPath) ? fs.readFileSync(activityPath, 'utf8') : '';
+    r = await request('HEAD', '/api/runTerminalScript?command=' + encodeURIComponent('printf head_probe > ' + probePath));
+    const allow = String((r.headers && r.headers.allow) || '');
+    const activityAfter = fs.existsSync(activityPath) ? fs.readFileSync(activityPath, 'utf8') : '';
+    assert(r.status === 405, 'HEAD execute is 405', JSON.stringify({ status: r.status, body: r.body }));
+    assert(allow === 'GET, POST', 'HEAD Allow is GET, POST', allow);
+    assert(!fs.existsSync(probePath), 'HEAD does not execute the command');
+    assert(activityAfter === activityBefore, 'HEAD does not append an activity-log entry');
+    fs.rmSync(probePath, { force: true });
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();

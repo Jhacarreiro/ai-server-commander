@@ -15,6 +15,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
 
+### Security
+
+- `HEAD` on `/api/runTerminalScript` now returns `405` with `Allow: GET, POST` and does not run the command. Express previously mapped `HEAD` onto GET, so `curl -I` and similar probes executed `?command=` and returned `200`. Documented GET/POST clients are unchanged. HEAD-based monitors of the execute URL should switch to GET/POST or a non-execute URL such as `/openapi.json`.
+
 ## [1.0.8] - 2026-07-12
 
 ### Added
