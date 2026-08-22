@@ -63,6 +63,21 @@ const htmlContent = marked.parse(data);
         return res.status(status).json({ error: message });
     });
 
+    server.on('error', (error) => {
+        // EADDRINUSE / EACCES on the listen socket previously crashed with
+        // an unhandled 'error' event and a raw Node stack - no mention of
+        // the port or the likely cause.
+        if (error && error.code === 'EADDRINUSE') {
+            console.error('Failed to start: port ' + config.port + ' is already in use. Stop the other process or change the port in config.');
+            process.exit(1);
+        }
+        if (error && error.code === 'EACCES') {
+            console.error('Failed to start: permission denied binding port ' + config.port + ' (privileged ports need root).');
+            process.exit(1);
+        }
+        console.error('Failed to start server:', error && error.message ? error.message : error);
+        process.exit(1);
+    });
     server.listen(config.port, () => {
         log('Server running on http://localhost:' + config.port);
         setURL(serverUrl);
