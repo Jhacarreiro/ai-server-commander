@@ -15,15 +15,31 @@ const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
 
 const blockedCommandPatterns = [
-    /rm\s+-rf\s+\/(?:\s|$)/i,
+    // rm -rf targeting the filesystem root, in any form: --no-preserve-root
+    // defeats rm's own failsafe; glob/expansion suffixes (/*, /?, /$x) and
+    // command chaining (/; /&& /|) previously slipped past the (?:\s|$) anchor.
+    /\brm\b[^;\n|&]*?--no-preserve-root/i,
+    // Root operand: the slash must START a path token (preceded by
+    // whitespace) so deleting "build/" or a nested path is not flagged,
+    // while "/", "/*", "/?", "/$x" and chaining ("/;", "/&&") all match.
+    // Recursive+force detection is flag-order-independent: lookaheads accept
+    // any short bundle containing r/f (-rf, -fr, -f -r, -r -f) or the long
+    // forms (--recursive/--force), in any order. The previous -rf-first-only
+    // pattern let "rm -fr /" and "rm -f -r /" through.
+    /\brm\b(?=[^;\n|&]*\s(?:-[a-z]*r|--recursive))(?=[^;\n|&]*\s(?:-[a-z]*f|--force))[^;\n|&]*?\s\/(?:\s|$|[;&|*?[]|\$)/i,
+    /\$\(\s*rm\b/,
+    /`\s*rm\b/,
     /\bmkfs(?:\.|\s|$)/i,
-    /\bdd\s+if=/i,
-    /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/,
+    // dd writing TO a device node (of=/dev/*) is destructive regardless of
+    // argument order or quoting; dd if=... of=regular-file stays allowed.
+    /\bdd\b[^;\n|&]*?of=["']?\/dev\//i,
+    // fork bomb with any identifier (including the classic literal ':' form).
+    /[A-Za-z_:][A-Za-z0-9_]*\s*\(\s*\)\s*\{\s*[A-Za-z_:][A-Za-z0-9_]*\s*\|\s*[A-Za-z_:][A-Za-z0-9_]*\s*&\s*\}/,
     /\bshutdown\b/i,
     /\breboot\b/i,
     /\bpoweroff\b/i,
     /\bhalt\b/i,
-    /\bpasswd\b/i,
+    /\b(?:^|[\s;|&])passwd\b/i,
     /\buserdel\b/i,
     /\bgroupdel\b/i,
     /chmod\s+-R\s+777\s+\//i,
