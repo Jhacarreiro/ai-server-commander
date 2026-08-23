@@ -79,24 +79,32 @@ const htmlContent = marked.parse(data);
         return res.status(status).json({ error: message });
     });
 
-    server.on('error', (error) => {
-        // EADDRINUSE / EACCES on the listen socket previously crashed with
-        // an unhandled 'error' event and a raw Node stack - no mention of
-        // the port or the likely cause.
-        if (error && error.code === 'EADDRINUSE') {
-            console.error('Failed to start: port ' + config.port + ' is already in use. Stop the other process or change the port in config.');
-            process.exit(1);
-        }
-        if (error && error.code === 'EACCES') {
-            console.error('Failed to start: permission denied binding port ' + config.port + ' (privileged ports need root).');
-            process.exit(1);
-        }
-        console.error('Failed to start server:', error && error.message ? error.message : error);
-        process.exit(1);
-    });
-    server.listen(config.port, () => {
-        log('Server running on http://localhost:' + config.port);
-        setURL(serverUrl);
+    // listen() reports bind failures (EADDRINUSE/EACCES) on the 'error'
+    // event rather than by throwing; reject so main.js can diagnose and exit.
+    // Preserve main's explicit port/permission messages by wrapping the error.
+    await new Promise((resolve, reject) => {
+        const onError = (error) => {
+            if (error && error.code === 'EADDRINUSE') {
+                const wrapped = new Error('Failed to start: port ' + config.port + ' is already in use (EADDRINUSE). Stop the other process or change the port in config.');
+                wrapped.code = error.code;
+                wrapped.cause = error;
+                return reject(wrapped);
+            }
+            if (error && error.code === 'EACCES') {
+                const wrapped = new Error('Failed to start: permission denied binding port ' + config.port + ' (privileged ports need root).');
+                wrapped.code = error.code;
+                wrapped.cause = error;
+                return reject(wrapped);
+            }
+            return reject(error);
+        };
+        server.once('error', onError);
+        server.listen(config.port, () => {
+            server.removeListener('error', onError);
+            log('Server running on http://localhost:' + config.port);
+            setURL(serverUrl);
+            resolve();
+        });
     });
     return server;
 };
