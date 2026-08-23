@@ -5,6 +5,7 @@ const notices = [];
 const DEFAULT_TTL_SECONDS = 60 * 60;
 const MAX_NOTICES = 100;
 const MAX_NOTICE_TEXT = Math.max(1, Number.parseInt(process.env.MAX_NOTICE_TEXT || '8192', 10) || 8192);
+const MAX_NOTICE_SOURCE = Math.max(1, Number.parseInt(process.env.MAX_NOTICE_SOURCE || '256', 10) || 256);
 const LEVELS = new Set(['info', 'warning', 'error', 'interrupt']);
 
 function setCors(res) {
@@ -94,7 +95,11 @@ function createNoticeHandler(req, res) {
 
     const requestedLevel = typeof body.level === 'string' ? body.level.toLowerCase() : 'info';
     const level = LEVELS.has(requestedLevel) ? requestedLevel : 'info';
-    const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'external';
+    const sourceRaw = typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'external';
+    if (sourceRaw.length > MAX_NOTICE_SOURCE) {
+        return res.status(400).json({ message: `Notice source exceeds ${MAX_NOTICE_SOURCE} characters.` });
+    }
+    const source = sourceRaw;
     const ttlSeconds = Number.isFinite(Number(body.ttlSeconds)) && Number(body.ttlSeconds) > 0 ? Math.min(Number(body.ttlSeconds), 24 * 60 * 60) : DEFAULT_TTL_SECONDS;
     const target = getNoticeTarget(req, body);
 

@@ -162,6 +162,11 @@ function assert(condition, label, details = '') {
     r = await request('POST', '/api/notices', { text: noticeOverPrefix + 'x'.repeat(8193 - noticeOverPrefix.length) });
     assert(r.status === 400 && r.body && String(r.body.message || '').includes('8192'), 'notice text over 8192 is rejected', JSON.stringify(r.body));
 
+    r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(256) });
+    assert(r.status === 200 || r.status === 201, 'notice source at 256 is accepted', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(257) });
+    assert(r.status === 400 && String(r.body.message || '').includes('source'), 'notice source over 256 is rejected', JSON.stringify(r.body));
+
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
