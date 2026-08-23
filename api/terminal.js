@@ -258,6 +258,25 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
+        if (error.code === 'TOO_MANY_CONCURRENT_COMMANDS') {
+            return {
+                status: 429,
+                result: {
+                    message: error.message,
+                    activityId,
+                    output: '',
+                    exitCode: 1,
+                    timedOut: false,
+                    interrupted: false,
+                    blocked: false,
+                    outputTruncated: false,
+                    maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                    mode,
+                    notices
+                }
+            };
+        }
+
         return {
             status: 500,
             result: {
