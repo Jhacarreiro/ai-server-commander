@@ -8,7 +8,13 @@ const port = Number(process.env.TEST_PORT || 33099);
 const token = process.env.TEST_TOKEN || 't'.repeat(64);
 const configPath = path.join(root, 'config.json');
 const backupPath = path.join(root, 'config.json.test-backup');
+const activityDir = path.join(root, 'runtime', 'activity');
 let server;
+
+function resetActivityDir() {
+  fs.rmSync(activityDir, { recursive: true, force: true });
+  fs.mkdirSync(activityDir, { recursive: true });
+}
 
 function writeTestConfig() {
   if (fs.existsSync(configPath)) fs.copyFileSync(configPath, backupPath);
@@ -107,7 +113,7 @@ function assert(condition, label, details = '') {
   writeTestConfig();
   fs.rmSync(logPath, { force: true });
   const out = fs.openSync(logPath, 'a');
-  server = spawn('node', ['main.js'], { cwd: root, stdio: ['ignore', out, out] });
+  server = spawn('node', ['main.js'], { cwd: root, stdio: ['ignore', out, out], env: { ...process.env, MAX_ACTIVITY_CONTEXTS: '3' } });
   try {
     await waitForServer(logPath);
     let r = await request('GET', '/api/runTerminalScript?command=printf%20hello_get');
@@ -149,13 +155,49 @@ function assert(condition, label, details = '') {
     // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
     r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
     assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
+
+    resetActivityDir();
+
+    for (let i = 1; i <= 4; i++) {
+      r = await request('POST', '/api/activity/context', { conversationId: `cap-c${i}`, taskId: `cap-task-${i}` });
+      assert(r.status === 200 && r.body.ok, `register activity context cap-c${i}`, JSON.stringify(r.body));
+    }
+    r = await request('GET', '/api/activity/index');
+    const registered = (r.body && r.body.contexts && r.body.contexts.conversations) || {};
+    assert(Object.keys(registered).length <= 3, 'activity context cap after 4 registrations', String(Object.keys(registered).length));
+    assert(!fs.existsSync(path.join(activityDir, 'conversations', 'cap-c1')), 'evicted conversation dir removed');
+    assert(!fs.existsSync(path.join(activityDir, 'tasks', 'cap-task-1')), 'evicted task dir removed');
+    assert(fs.existsSync(path.join(activityDir, 'conversations', 'cap-c4', 'status.json')), 'retained conversation dir has status.json');
+    assert(fs.existsSync(path.join(activityDir, 'tasks', 'cap-task-4', 'status.json')), 'retained task dir has status.json');
+
+    for (let i = 1; i <= 4; i++) {
+      r = await request('POST', `/api/runTerminalScript?conversationId=cap-w${i}&command=printf%20ok`);
+      assert(r.status === 200 && r.body.output === 'ok', `terminal write registers context cap-w${i}`, JSON.stringify(r.body));
+    }
+    r = await request('GET', '/api/activity/index');
+    const written = (r.body && r.body.contexts && r.body.contexts.conversations) || {};
+    assert(Object.keys(written).length <= 3, 'activity context cap on ordinary writes', String(Object.keys(written).length));
+
+    r = await request('POST', '/api/activity/context', { conversationId: 'cap-s1', taskId: 'task-shared' });
+    assert(r.status === 200 && r.body.ok, 'register shared-task context cap-s1', JSON.stringify(r.body));
+    r = await request('POST', '/api/activity/context', { conversationId: 'cap-s2', taskId: 'task-shared' });
+    assert(r.status === 200 && r.body.ok, 'register shared-task context cap-s2', JSON.stringify(r.body));
+    r = await request('POST', '/api/activity/context', { conversationId: 'cap-s3', taskId: 'cap-task-s3' });
+    assert(r.status === 200 && r.body.ok, 'register context cap-s3', JSON.stringify(r.body));
+    r = await request('POST', '/api/activity/context', { conversationId: 'cap-s4', taskId: 'cap-task-s4' });
+    assert(r.status === 200 && r.body.ok, 'register context cap-s4', JSON.stringify(r.body));
+    assert(!fs.existsSync(path.join(activityDir, 'conversations', 'cap-s1')), 'evicted shared-task conversation dir removed');
+    assert(fs.existsSync(path.join(activityDir, 'tasks', 'task-shared')), 'shared task dir kept while another context references it');
+
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
+    fs.rmSync(activityDir, { recursive: true, force: true });
   }
 })().catch((err) => {
   if (server) server.kill('SIGTERM');
   restoreConfig();
+  try { fs.rmSync(activityDir, { recursive: true, force: true }); } catch (_) {}
   console.error(err.stack || err.message);
   process.exit(1);
 });
