@@ -12,9 +12,15 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
 
+### Fixed
+
+- Expired OAuth authorization codes, access tokens and refresh tokens are now pruned from disk on read, not only at process start.
+- OAuth state persist merges the on-disk file under a sibling lock and keeps other-process revocations, rotations and new tokens instead of rewriting a stale snapshot.
+
 ### Added
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
+- Regression coverage for expiry-on-read cleanup and two-process revocation, rotation and concurrent token writes.
 
 ## [1.0.8] - 2026-07-12
 
