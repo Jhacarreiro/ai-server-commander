@@ -5,6 +5,7 @@ const { getPendingNotices } = require('./notices');
 const { appendActivity, preview, hashText, getActivityContext } = require('./activityLog');
 const {
     COMMAND_TIMEOUT_MS,
+    DEFAULT_SHELL,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
     MAX_SHELL_BYTES,
@@ -34,7 +35,8 @@ function parseRequest(req) {
 
     let mode = 'inline';
     if (req.method !== 'GET') {
-        if (body.mode === 'script') mode = 'script';
+        if (!body.mode && typeof body.script === 'string') mode = 'script'; // matches MCP auto-detect
+        else if (body.mode === 'script') mode = 'script';
         else if (body.mode === 'inline' || !body.mode) mode = 'inline';
         else return { error: true, status: 400, message: 'Unknown mode: ' + body.mode + '. Supported: inline, script.' };
     }
@@ -52,7 +54,7 @@ function parseRequest(req) {
         return { error: true, status: 413, message: 'Script body exceeds maximum of ' + MAX_SCRIPT_BODY_BYTES + ' bytes.' };
     }
 
-    let shell = process.env.SHELL || '/bin/sh';
+    let shell = DEFAULT_SHELL;
     if (mode === 'script' && options.shell) {
         if (typeof options.shell !== 'string' || Buffer.byteLength(options.shell, 'utf8') > MAX_SHELL_BYTES) {
             return { error: true, status: 400, message: 'Shell path is invalid or too long.' };
@@ -175,7 +177,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
     let scriptDir = null;
     try {
         let commandToRun = command;
-        let executionShell = process.env.SHELL || '/bin/bash';
+        let executionShell = DEFAULT_SHELL;
         if (mode === 'script') {
             const created = createScriptFile(script);
             scriptDir = created.scriptDir;
