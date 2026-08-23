@@ -23,7 +23,7 @@ module.exports = async () => {
     });
     const expressApp = express();
     const server = http.createServer(expressApp);
-    expressApp.use(express.json({ limit: MAX_SCRIPT_BODY_BYTES, strict: false }));
+    expressApp.use(express.json({ limit: MAX_SCRIPT_BODY_BYTES }));
     expressApp.use(express.urlencoded({ extended: false, limit: MAX_SCRIPT_BODY_BYTES }));
 
     log('serving static from', path.join(__dirname, '..', 'public'));

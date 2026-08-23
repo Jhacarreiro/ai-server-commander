@@ -157,7 +157,7 @@ function assert(condition, label, details = '') {
     assert(r.status === 400 && r.body && r.body.error === 'File path is required.', 'POST text/plain body is 400', JSON.stringify(r.body));
 
     r = await request('POST', '/api/read-or-edit-file', undefined, { raw: 'null', contentType: 'application/json' });
-    assert(r.status === 400 && r.body && r.body.error === 'File path is required.', 'POST JSON null body is 400', JSON.stringify(r.body));
+    assert(r.status === 400 && r.body && r.body.error === 'Invalid request body.', 'POST JSON null body is 400 under strict JSON', JSON.stringify(r.body));
 
     r = await request('GET', '/api/server-url');
     assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
