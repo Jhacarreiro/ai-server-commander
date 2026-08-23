@@ -5,6 +5,15 @@ const readline = require('readline/promises');
 
 const DEFAULT_CONFIG_PATH = path.resolve(process.env.CONFIG_FILE_PATH || './config.json');
 
+// Documented example placeholders must never be accepted as real secrets:
+// they are publicly known and would let anyone authenticate.
+const REJECTED_PLACEHOLDER_TOKENS = new Set([
+    'replace-me',
+    'replace-me-too',
+    'replace-with-a-long-random-secret',
+    'replace-with-a-separate-long-random-secret'
+]);
+
 function normalizePort(value) {
     const port = Number.parseInt(String(value), 10);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -36,10 +45,16 @@ function validateConfig(input) {
     }
 
     const authToken = String(input.authToken || '').trim();
+    if (REJECTED_PLACEHOLDER_TOKENS.has(authToken)) {
+        throw new Error('authToken must not be a documented example placeholder; generate a real random secret (for example: openssl rand -hex 32).');
+    }
     if (authToken.length < 32) {
         throw new Error('authToken must contain at least 32 characters.');
     }
     const mcpToken = input.mcpToken == null ? undefined : String(input.mcpToken).trim();
+    if (mcpToken && REJECTED_PLACEHOLDER_TOKENS.has(mcpToken)) {
+        throw new Error('mcpToken must not be a documented example placeholder; generate a real random secret (for example: openssl rand -hex 32).');
+    }
     if (mcpToken && mcpToken.length < 32) {
         throw new Error('mcpToken must contain at least 32 characters when provided.');
     }

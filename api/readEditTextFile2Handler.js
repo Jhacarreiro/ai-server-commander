@@ -21,17 +21,43 @@ const {
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
 
+// Resolve symlinks so a link inside the workspace cannot point at files
+// outside it. When the target does not exist yet (POST may create it),
+// resolve the deepest existing ancestor and re-append the missing tail
+// lexically; fall back to the lexical path if that also fails.
+const resolveRealPath = ( target ) => {
+    try {
+        return fs.realpathSync( target );
+    } catch {
+        let probe = path.dirname( target );
+        const tail = [ path.basename( target ) ];
+        while ( !fs.existsSync( probe ) ) {
+            const parent = path.dirname( probe );
+            if ( parent === probe ) break;
+            tail.unshift( path.basename( probe ) );
+            probe = parent;
+        }
+        try {
+            return path.join( fs.realpathSync( probe ), ...tail );
+        } catch {
+            return target;
+        }
+    }
+};
+
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
+    const readOnly = !replacements || replacements.length === 0;
 
     // Check if the file exists only when replacements are empty
-    if ( ( !replacements || replacements.length === 0 ) && !fs.existsSync( filePath ) ) {
+    if ( readOnly && !fs.existsSync( filePath ) ) {
         throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' ); // File does not exist and no replacements specified, so do nothing
     }
 
     try {
-        fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
+        // 'r' for pure reads (never creates files); 'a+' only when the caller intends to modify
+        fileHandle = await fs.promises.open( filePath, readOnly ? 'r' : 'a+' );
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
         log( 'Error reading or creating file:', err );
@@ -39,6 +65,14 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
 
+    if ( readOnly ) {
+        return {
+            updatedContent: fileContent,
+            unsuccessfulReplacements: [],
+            fuzzyReplacements: [],
+            originalContent: fileContent
+        };
+    }
 
     const result = await mergeText( fileContent, replacements );
 
@@ -140,8 +174,32 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    const resolvedPath = path.resolve( currentDir, filePath );
+    const workspaceRoot = path.resolve( currentDir );
+    if ( resolvedPath !== workspaceRoot && !resolvedPath.startsWith( workspaceRoot + path.sep ) ) {
+        return res.status( 400 ).send( 'File path is outside the workspace directory.' );
+    }
+
+    // Re-check the boundary against symlink-resolved paths so a link inside
+    // the workspace cannot reach files outside it (reads and writes).
+    const resolvedWorkspace = resolveRealPath( workspaceRoot );
+    const resolvedFile = resolveRealPath( resolvedPath );
+    if ( resolvedFile !== resolvedWorkspace && !resolvedFile.startsWith( resolvedWorkspace + path.sep ) ) {
+        return res.status( 400 ).send( 'File path is outside the workspace directory.' );
+    }
+    filePath = resolvedFile;
+
+    // GET is a pure read: return the raw file content without minting access
+    // tokens, syntax checking, beautifying, or writing anything.
+    if ( req.method === 'GET' ) {
+        let content;
+        try {
+            content = await fs.promises.readFile( filePath, 'utf8' );
+        } catch ( error ) {
+            console.error( error );
+            return res.status( 400 ).send( `Error reading the file: ${error.message}` );
+        }
+        return res.type( 'text/plain' ).send( content );
     }
 
     let replaceResult;
