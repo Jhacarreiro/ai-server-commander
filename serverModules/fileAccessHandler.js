@@ -5,18 +5,58 @@ const {log} = require("../serverModules/logger");
 const simpleGit = require("simple-git");
 
 const tokenStorePath = path.join(__dirname, "../tokenStore.json");
+const MAX_ACCESS_FILE_BYTES = Math.max(
+    1024,
+    Number.parseInt(process.env.MAX_ACCESS_FILE_BYTES || String(2 * 1024 * 1024), 10) || (2 * 1024 * 1024)
+);
+const MAX_TOKEN_STORE_ENTRIES = Math.max(
+    16,
+    Number.parseInt(process.env.MAX_TOKEN_STORE_ENTRIES || '500', 10) || 500
+);
 
 // Function to read the token store
 const readTokenStore = () => {
-    if (fs.existsSync(tokenStorePath)) {
-        return JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+    if (!fs.existsSync(tokenStorePath)) return {};
+    try {
+        const parsed = JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+        const normalized = {};
+        for (const [key, value] of Object.entries(parsed)) {
+            if (
+                value &&
+                typeof value === "object" &&
+                typeof value.filePath === "string" &&
+                !Number.isNaN(new Date(value.expiryDate).getTime())
+            ) {
+                normalized[key] = value;
+            }
+        }
+        return normalized;
+    } catch (err) {
+        log("tokenStore.json unreadable; starting empty store:", err && err.message ? err.message : err);
+        return {};
     }
-    return {};
 };
 
 // Function to write to the token store
+// Atomic tmp+rename+fsync: a torn write must not silently revoke every
+// outstanding share URL (bare writeFileSync can corrupt the file on crash).
 const writeToTokenStore = (tokenStore) => {
-    fs.writeFileSync(tokenStorePath, JSON.stringify(tokenStore, null, 2), "utf8");
+    const tmpPath = tokenStorePath + ".tmp-" + process.pid + "-" + Date.now();
+    const payload = JSON.stringify(tokenStore, null, 2);
+    let fd = null;
+    try {
+        fd = fs.openSync(tmpPath, "w", 0o600);
+        fs.writeFileSync(fd, payload, "utf8");
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = null;
+        fs.renameSync(tmpPath, tokenStorePath);
+        fs.chmodSync(tokenStorePath, 0o600);
+    } finally {
+        if (fd !== null) { try { fs.closeSync(fd); } catch {} }
+        try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    }
 };
 
 
@@ -49,6 +89,15 @@ module.exports.createToken = (getURL, filePath) => {
         }
     });
 
+    // Cap store growth (oldest expiry first) so tokenStore.json cannot grow without bound.
+    const entries = Object.entries(tokenStore);
+    if (entries.length > MAX_TOKEN_STORE_ENTRIES) {
+        entries
+            .sort((a, b) => new Date(a[1].expiryDate) - new Date(b[1].expiryDate))
+            .slice(0, entries.length - MAX_TOKEN_STORE_ENTRIES)
+            .forEach(([tok]) => { delete tokenStore[tok]; });
+    }
+
     writeToTokenStore(tokenStore);
 
     const serverUrl = getURL(); // Gets the base server URL
@@ -71,9 +120,25 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     if (req.query.diff) {
+        let st;
+        try {
+            st = fs.statSync(tokenInfo.filePath);
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        if (!st.isFile()) {
+            return res.status(400).send('Token target is not a regular file.');
+        }
+        if (st.size > MAX_ACCESS_FILE_BYTES) {
+            return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
+        }
         const git = simpleGit();
         try {
             const diffOutput = await git.diff(['--', tokenInfo.filePath]);
+            if (Buffer.byteLength(diffOutput, 'utf8') > MAX_ACCESS_FILE_BYTES * 2) {
+                return res.status(413).send('Diff output exceeds MAX_ACCESS_FILE_BYTES.');
+            }
             const htmlDiff = `
                 <!DOCTYPE html>
                 <html>
@@ -97,16 +162,29 @@ module.exports.retrieveFile = async (req, res) => {
             res.send(htmlDiff);
         } catch (error) {
             log('Error fetching Git diff:', error);
-            res.status(500).send('Error fetching Git diff: ' + error.message);
+            res.status(500).send('Error fetching Git diff.');
         }
     } else {
-        fs.readFile(tokenInfo.filePath, 'utf8', (err, data) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Failed to read the file.');
+        let fd;
+        try {
+            fd = fs.openSync(tokenInfo.filePath, 'r');
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        try {
+            const st = fs.fstatSync(fd);
+            if (!st.isFile()) {
+                return res.status(400).send('Token target is not a regular file.');
             }
+            if (st.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
+            }
+            const data = fs.readFileSync(fd, 'utf8');
             res.setHeader('Content-Type', 'text/plain');
             res.send(data);
-        });
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 };
