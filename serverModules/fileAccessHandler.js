@@ -28,7 +28,9 @@ module.exports.createToken = (getURL, filePath) => {
     // Check for an existing token for the filePath
     Object.keys(tokenStore).forEach(existingToken => {
         const tokenInfo = tokenStore[existingToken];
-        if (tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
+        // Legacy/corrupt non-object entries (e.g. null) would crash the
+        // scan and 500 every file-edit request AFTER the edit was applied.
+        if (tokenInfo && typeof tokenInfo === 'object' && tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
             // Extend the existing token's expiry date
             tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
             token = existingToken;
@@ -42,9 +44,10 @@ module.exports.createToken = (getURL, filePath) => {
         tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
     }
 
-    // Filter out expired tokens
+    // Filter out expired tokens (skip legacy/corrupt non-object entries)
     Object.keys(tokenStore).forEach(token => {
-        if (new Date(tokenStore[token].expiryDate) < new Date()) {
+        const entry = tokenStore[token];
+        if (entry && typeof entry === 'object' && new Date(entry.expiryDate) < new Date()) {
             delete tokenStore[token];
         }
     });
