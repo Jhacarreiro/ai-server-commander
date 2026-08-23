@@ -80,7 +80,20 @@ function loadConfigFile(configPath = DEFAULT_CONFIG_PATH) {
     let raw = fs.readFileSync(configPath, 'utf8');
     if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
     const parsed = JSON.parse(raw);
-    return validateConfig(parsed);
+    try {
+        return validateConfig(parsed);
+    } catch (error) {
+        const message = error && error.message ? String(error.message) : '';
+        // Upgrade path: a persisted config that only fails port validation
+        // (legacy parseInt leftovers like "3000abc" / "1e3") keeps tokens and
+        // domain and rewrites the port to 3000.
+        if (!message.includes('port must be an integer')) throw error;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw error;
+        const repaired = validateConfig({ ...parsed, port: 3000 });
+        writeConfigFile(configPath, repaired);
+        console.error(`Repaired invalid persisted port ${JSON.stringify(parsed.port)} to 3000 in ${configPath}`);
+        return repaired;
+    }
 }
 
 function writeConfigFile(configPath, config) {

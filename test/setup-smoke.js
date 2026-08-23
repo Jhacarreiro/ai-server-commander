@@ -113,7 +113,23 @@ const {
     }
     console.log('PASS malformed and out-of-range port values are rejected');
 
-    const retryPath = path.join(root, 'retry.json');
+    const legacyPortPath = path.join(root, 'legacy-port.json');
+    fs.writeFileSync(legacyPortPath, JSON.stringify({
+        port: '3000abc',
+        useLocalTunnel: false,
+        productionDomain: 'https://legacy.example.com',
+        authToken: 'e'.repeat(64),
+        mcpToken: 'f'.repeat(64)
+    }));
+    const repaired = loadConfigFile(legacyPortPath);
+    assert.strictEqual(repaired.port, 3000);
+    assert.strictEqual(repaired.productionDomain, 'https://legacy.example.com');
+    assert.strictEqual(repaired.authToken, 'e'.repeat(64));
+    const persisted = JSON.parse(fs.readFileSync(legacyPortPath, 'utf8'));
+    assert.strictEqual(persisted.port, 3000);
+    console.log('PASS legacy persisted port is repaired to 3000 without dropping secrets');
+
+        const retryPath = path.join(root, 'retry.json');
     const retryAnswers = [
         '3000abc', 'https://retry.example.com',
         'notaport', 'https://retry.example.com',
