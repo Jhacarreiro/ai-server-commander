@@ -166,6 +166,15 @@ function assert(condition, label, details = '') {
     assert(r.status === 200 || r.status === 201, 'notice source at 256 is accepted', JSON.stringify(r.body));
     r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(257) });
     assert(r.status === 400 && String(r.body.message || '').includes('source'), 'notice source over 256 is rejected', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'meta-ok', conversationId: 'c'.repeat(256), taskId: 't'.repeat(256), taskTitle: 'n'.repeat(256) });
+    assert(r.status === 200 || r.status === 201, 'notice metadata at 256 is accepted', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'meta-over', conversationId: 'c'.repeat(4000), taskTitle: 'n'.repeat(4000) });
+    assert(r.status === 200 || r.status === 201, 'oversized notice metadata is truncated not rejected', JSON.stringify(r.body));
+    const notice = r.body && r.body.notice;
+    if (notice) {
+        assert(String(notice.targetConversationId || '').length <= 256, 'conversationId bounded', notice.targetConversationId && notice.targetConversationId.length);
+        assert(!notice.targetTaskTitle || String(notice.targetTaskTitle).length <= 256, 'taskTitle bounded');
+    }
 
   } finally {
     if (server) server.kill('SIGTERM');
