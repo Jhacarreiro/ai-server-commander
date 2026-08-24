@@ -19,6 +19,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 ### Fixed
 
 - OAuth state persist now serializes writers through a sibling lock, merges the on-disk file so other-process revocations, rotations and new tokens are kept, and still fails closed on corrupt or symlink loads.
+- Documented that mixed-version OAuth writers are unsupported: stop any process that writes `OAUTH_STATE_PATH` without the lock-and-merge protocol before starting this release.
 
 ## [1.0.8] - 2026-07-12
 

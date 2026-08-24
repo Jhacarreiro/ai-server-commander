@@ -12,7 +12,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-oauth-'));
 const configPath = path.join(temp, 'config.json');
 const statePath = path.join(temp, 'oauth-state.json');
 const logPath = path.join(temp, 'server.log');
-const port = 33104;
+const port = Number(process.env.TEST_PORT || 33104);
 const authToken = 'a'.repeat(64);
 const mcpToken = 'b'.repeat(64);
 let server = null;
@@ -374,6 +374,41 @@ function runChildStoreScript(statePath, source) {
     });
     assert.strictEqual(response.status, 200, response.text);
     console.log('PASS public PKCE client remains compatible without a client secret');
+
+    const raceVerifier = crypto.randomBytes(32).toString('base64url');
+    const raceRedirect = 'http://127.0.0.1/callback';
+    response = await request('POST', '/oauth/authorize', {
+        form: {
+            client_id: clientId,
+            redirect_uri: raceRedirect,
+            response_type: 'code',
+            code_challenge: pkceChallenge(raceVerifier),
+            code_challenge_method: 'S256',
+            approval_code: authToken,
+            resource: `http://127.0.0.1:${port}/mcp`,
+            scope: 'terminal'
+        }
+    });
+    assert.strictEqual(response.status, 302, response.text);
+    const raceCode = new URL(response.headers.location).searchParams.get('code');
+    const raceBody = {
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: raceCode,
+        redirect_uri: raceRedirect,
+        code_verifier: raceVerifier
+    };
+    const raceResults = await Promise.all([
+        request('POST', '/oauth/token', { body: raceBody }),
+        request('POST', '/oauth/token', { body: raceBody })
+    ]);
+    const statuses = raceResults.map((item) => item.status).sort();
+    assert.deepStrictEqual(statuses, [200, 400], raceResults.map((item) => `${item.status}:${item.text}`).join(' | '));
+    const loser = raceResults.find((item) => item.status === 400);
+    assert.strictEqual(loser.body.error, 'invalid_grant');
+    console.log('PASS concurrent authorization-code exchange is one 200 and one invalid_grant');
+
 
     const verifier = crypto.randomBytes(32).toString('base64url');
     const redirectUri = 'http://127.0.0.1/callback';
