@@ -31,6 +31,19 @@ function normalizePort(value) {
     return port;
 }
 
+// Previous releases used parseInt, so a persisted "8080abc" listened on 8080.
+// Recover that effective port in memory only; never rewrite the file.
+function legacyEffectivePort(value) {
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 65535) {
+        return value;
+    }
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return null;
+    return parsed;
+}
+
 function normalizeProductionDomain(value) {
     const raw = String(value || '').trim().replace(/\/$/, '');
     let parsed;
@@ -89,9 +102,14 @@ function loadConfigFile(configPath = DEFAULT_CONFIG_PATH) {
         // domain and rewrites the port to 3000.
         if (!message.includes('port must be an integer')) throw error;
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw error;
-        const repaired = validateConfig({ ...parsed, port: 3000 });
-        writeConfigFile(configPath, repaired);
-        console.error(`Repaired invalid persisted port ${JSON.stringify(parsed.port)} to 3000 in ${configPath}`);
+        const effective = legacyEffectivePort(parsed.port);
+        if (effective == null) {
+            throw new Error(
+                `Persisted port ${JSON.stringify(parsed.port)} is not a recoverable integer 1-65535. Edit config.json port to a decimal integer and restart.`
+            );
+        }
+        const repaired = validateConfig({ ...parsed, port: effective });
+        console.error(`Using legacy effective port ${effective} from persisted ${JSON.stringify(parsed.port)} in ${configPath} (file not rewritten)`);
         return repaired;
     }
 }

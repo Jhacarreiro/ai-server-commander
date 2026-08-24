@@ -126,8 +126,27 @@ const {
     assert.strictEqual(repaired.productionDomain, 'https://legacy.example.com');
     assert.strictEqual(repaired.authToken, 'e'.repeat(64));
     const persisted = JSON.parse(fs.readFileSync(legacyPortPath, 'utf8'));
-    assert.strictEqual(persisted.port, 3000);
-    console.log('PASS legacy persisted port is repaired to 3000 without dropping secrets');
+    assert.strictEqual(persisted.port, '3000abc', 'persisted file is not rewritten');
+    const eightPath = path.join(root, 'legacy-8080.json');
+    fs.writeFileSync(eightPath, JSON.stringify({
+        port: '8080abc',
+        useLocalTunnel: false,
+        productionDomain: 'https://legacy.example.com',
+        authToken: 'e'.repeat(64),
+        mcpToken: 'f'.repeat(64)
+    }));
+    assert.strictEqual(loadConfigFile(eightPath).port, 8080);
+    assert.strictEqual(JSON.parse(fs.readFileSync(eightPath, 'utf8')).port, '8080abc');
+    const badPath = path.join(root, 'legacy-bad-port.json');
+    fs.writeFileSync(badPath, JSON.stringify({
+        port: 'notaport',
+        useLocalTunnel: false,
+        productionDomain: 'https://legacy.example.com',
+        authToken: 'e'.repeat(64),
+        mcpToken: 'f'.repeat(64)
+    }));
+    assert.throws(() => loadConfigFile(badPath), /not a recoverable integer/);
+    console.log('PASS legacy persisted port uses previous parseInt value in memory and does not rewrite the file');
 
         const retryPath = path.join(root, 'retry.json');
     const retryAnswers = [
