@@ -7,11 +7,13 @@ const { addOAuthRoutes } = require('../api/oauth');
 const exitApplicationHandler = require('../api/exitApplicationHandler');
 const {initDB} = require("./firebaseDB");
 
+const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 module.exports = {
     addApi: (app, config, getURL, close) => {
         addOAuthRoutes(app, config);
         const mcpHandler = createMcpHandler(config);
-        app.all('/mcp', mcpHandler);
+        app.all('/mcp', wrapAsync(mcpHandler));
         app.use((req, res, next) => {
             const originalSend = res.send;
             const queryKeys = req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
@@ -41,21 +43,21 @@ module.exports = {
             next();
         });
         const readEditTextFileHandler = require('../api/readEditTextFile2Handler')(getURL);
-        app.get('/api/runTerminalScript', terminalHandler);
-        app.post('/api/runTerminalScript', terminalHandler);
-        app.post('/v1/commands/execute', terminalHandler);
-        app.get('/api/server-url', require('../api/getServerUrlHandler')(getURL));
-        app.get('/api/logs', require('../api/getLogsHandler'));
-        app.get('/api/activity', activityHandler);
-        app.get('/api/activity/status', activityStatusHandler);
-        app.get('/api/activity/index', activityIndexHandler);
-        app.post('/api/activity/context', activityContextHandler);
-        app.post('/api/notices', createNoticeHandler);
-        app.get('/api/notices/pending', pendingNoticesHandler);
-        app.post('/api/notices/:id/ack', ackNoticeHandler);
-        app.post('/api/restart', exitApplicationHandler(close));
-        app.post("/api/interrupt", interruptHandler);
-        app.post('/api/read-or-edit-file', readEditTextFileHandler);
-        app.get('/api/read-or-edit-file', readEditTextFileHandler);
+        app.get('/api/runTerminalScript', wrapAsync(terminalHandler));
+        app.post('/api/runTerminalScript', wrapAsync(terminalHandler));
+        app.post('/v1/commands/execute', wrapAsync(terminalHandler));
+        app.get('/api/server-url', wrapAsync(require('../api/getServerUrlHandler')(getURL)));
+        app.get('/api/logs', wrapAsync(require('../api/getLogsHandler')));
+        app.get('/api/activity', wrapAsync(activityHandler));
+        app.get('/api/activity/status', wrapAsync(activityStatusHandler));
+        app.get('/api/activity/index', wrapAsync(activityIndexHandler));
+        app.post('/api/activity/context', wrapAsync(activityContextHandler));
+        app.post('/api/notices', wrapAsync(createNoticeHandler));
+        app.get('/api/notices/pending', wrapAsync(pendingNoticesHandler));
+        app.post('/api/notices/:id/ack', wrapAsync(ackNoticeHandler));
+        app.post('/api/restart', wrapAsync(exitApplicationHandler(close)));
+        app.post("/api/interrupt", wrapAsync(interruptHandler));
+        app.post('/api/read-or-edit-file', wrapAsync(readEditTextFileHandler));
+        app.get('/api/read-or-edit-file', wrapAsync(readEditTextFileHandler));
     }
 };

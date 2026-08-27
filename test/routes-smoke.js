@@ -30,9 +30,12 @@ function restoreConfig() {
   }
 }
 
-function request(method, pathName, body) {
+function request(method, pathName, body, options = {}) {
   return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : undefined;
+    const payload = options.raw !== undefined
+      ? options.raw
+      : (body ? JSON.stringify(body) : undefined);
+    const contentType = options.contentType || 'application/json';
     const req = http.request({
       hostname: '127.0.0.1',
       port,
@@ -40,7 +43,7 @@ function request(method, pathName, body) {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
-        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {})
+        ...(payload !== undefined ? { 'Content-Type': contentType, 'Content-Length': Buffer.byteLength(payload) } : {})
       },
       timeout: 12000
     }, (res) => {
@@ -149,6 +152,16 @@ function assert(condition, label, details = '') {
     // Oversized bodies are rejected as 413 (entity.too.large) before parsing.
     r = await rawRequest('POST', '/v1/commands/execute', '{"script":"' + 'x'.repeat(600000) + '"}');
     assert(r.status === 413 && r.body.error === 'Request body too large.', 'oversized body returns 413 with Request body too large', JSON.stringify(r.body).slice(0, 160));
+
+    r = await request('POST', '/api/read-or-edit-file', undefined, { raw: 'this is not json', contentType: 'text/plain' });
+    assert(r.status === 400 && r.body && r.body.error === 'File path is required.', 'POST text/plain body is 400', JSON.stringify(r.body));
+
+    r = await request('POST', '/api/read-or-edit-file', undefined, { raw: 'null', contentType: 'application/json' });
+    assert(r.status === 400 && r.body && r.body.error === 'Invalid request body.', 'POST JSON null body is 400 under strict JSON', JSON.stringify(r.body));
+
+    r = await request('GET', '/api/server-url');
+    assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
+
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
