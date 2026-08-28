@@ -17,3 +17,6 @@ config.json
 coverage/
 .nyc_output/
 firebaseAdmin.json
+
+tokenStore.json
+tokenStore.json.*

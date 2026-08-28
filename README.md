@@ -334,6 +334,7 @@ AI Server Commander provides controls, not isolation:
 - Temporary script files are mode-restricted and deleted after execution.
 - Activity previews redact common token and secret patterns.
 - MCP risk annotations tell compatible clients that terminal execution may be destructive and open-world.
+- Token-authorized `/access?...diff=1` requests discover the target file repository, read indexed blob data through bounded Git subprocesses, and compare isolated temporary snapshots with external diff/textconv execution disabled. Indexed and working-tree inputs are capped at 8 MiB each, and each Git subprocess is capped at 5 seconds; files or repositories that exceed those limits fail closed with an HTTP 500 response rather than falling back to unbounded Git behavior.
 
 It does **not** provide:
 
