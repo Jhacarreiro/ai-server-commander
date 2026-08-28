@@ -1,6 +1,8 @@
 node_modules/
 runtime/
 config.json
+tokenStore.json
+tokenStore.json.*
 .env
 .env.*
 !.env.example
