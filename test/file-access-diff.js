@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const { retrieveFile } = require('../serverModules/fileAccessHandler');
 
 const root = path.resolve(__dirname, '..');
@@ -169,6 +169,134 @@ const storePath = path.join(root, 'tokenStore.json');
         assert.match(danglingDiff, /new mode 120000/);
         assert.match(danglingDiff, /\+missing-target\.txt/);
         console.log('PASS /access diff treats dangling symlinks as existing paths');
+
+        const literalPath = path.join(tmpRepo, 'wild[1].txt');
+        const wildcardDistractorPath = path.join(tmpRepo, 'wild1.txt');
+        fs.writeFileSync(literalPath, 'literal-before\n');
+        fs.writeFileSync(wildcardDistractorPath, 'distractor-before\n');
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'add', 'wild[1].txt', 'wild1.txt'], { cwd: tmpRepo });
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'commit', '-q', '-m', 'add literal pathspec fixtures'], { cwd: tmpRepo });
+        fs.writeFileSync(literalPath, 'literal-after\n');
+        const literalToken = 'literal-pathspec-token';
+        tokenStore[literalToken] = {
+            filePath: literalPath,
+            expiryDate: new Date(Date.now() + 60_000).toISOString()
+        };
+        fs.writeFileSync(storePath, JSON.stringify(tokenStore, null, 2), { encoding: 'utf8', mode: 0o600 });
+        const literalReq = { params: { token: literalToken }, query: { diff: '1' } };
+        const literalRes = {
+            statusCode: 200,
+            body: '',
+            status(code) { this.statusCode = code; return this; },
+            send(body) { this.body = String(body); return this; },
+            setHeader() {}
+        };
+        await retrieveFile(literalReq, literalRes);
+        assert.strictEqual(literalRes.statusCode, 200, 'literal pathspec filename should diff successfully');
+        const literalMatch = literalRes.body.match(/atob\('([^']+)'\)/);
+        assert.ok(literalMatch, 'literal pathspec response should embed a diff');
+        const literalDiff = Buffer.from(literalMatch[1], 'base64').toString('utf8');
+        assert.match(literalDiff, /diff --git a\/wild\[1\]\.txt b\/wild\[1\]\.txt/);
+        assert.match(literalDiff, /-literal-before/);
+        assert.match(literalDiff, /\+literal-after/);
+        assert.doesNotMatch(literalDiff, /distractor-before/);
+        console.log('PASS /access diff uses a literal indexed path lookup');
+
+        const binaryPath = path.join(tmpRepo, 'binary.dat');
+        fs.writeFileSync(binaryPath, Buffer.from([0x00, 0x01, 0x02, 0x03]));
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'add', 'binary.dat'], { cwd: tmpRepo });
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'commit', '-q', '-m', 'add binary fixture'], { cwd: tmpRepo });
+        fs.writeFileSync(binaryPath, Buffer.from([0x00, 0x01, 0x09, 0x03]));
+        const binaryToken = 'binary-token';
+        tokenStore[binaryToken] = {
+            filePath: binaryPath,
+            expiryDate: new Date(Date.now() + 60_000).toISOString()
+        };
+        fs.writeFileSync(storePath, JSON.stringify(tokenStore, null, 2), { encoding: 'utf8', mode: 0o600 });
+        const binaryReq = { params: { token: binaryToken }, query: { diff: '1' } };
+        const binaryRes = {
+            statusCode: 200,
+            body: '',
+            status(code) { this.statusCode = code; return this; },
+            send(body) { this.body = String(body); return this; },
+            setHeader() {}
+        };
+        await retrieveFile(binaryReq, binaryRes);
+        assert.strictEqual(binaryRes.statusCode, 200, 'binary change should produce a diff');
+        const binaryMatch = binaryRes.body.match(/atob\('([^']+)'\)/);
+        assert.ok(binaryMatch, 'binary response should embed a diff');
+        const binaryDiff = Buffer.from(binaryMatch[1], 'base64').toString('utf8');
+        assert.match(binaryDiff, /Binary files a\/binary\.dat and b\/binary\.dat differ/);
+        assert.doesNotMatch(binaryDiff, /(?:a\/)?before|(?:b\/)?after/);
+        console.log('PASS /access diff relabels binary temporary paths');
+
+        const binaryDeletedPath = path.join(tmpRepo, 'binary-deleted.dat');
+        fs.writeFileSync(binaryDeletedPath, Buffer.from([0x00, 0x10, 0x20]));
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'add', 'binary-deleted.dat'], { cwd: tmpRepo });
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'commit', '-q', '-m', 'add binary deletion fixture'], { cwd: tmpRepo });
+        fs.unlinkSync(binaryDeletedPath);
+        const binaryDeletedToken = 'binary-deleted-token';
+        tokenStore[binaryDeletedToken] = {
+            filePath: binaryDeletedPath,
+            expiryDate: new Date(Date.now() + 60_000).toISOString()
+        };
+        fs.writeFileSync(storePath, JSON.stringify(tokenStore, null, 2), { encoding: 'utf8', mode: 0o600 });
+        const binaryDeletedReq = { params: { token: binaryDeletedToken }, query: { diff: '1' } };
+        const binaryDeletedRes = {
+            statusCode: 200,
+            body: '',
+            status(code) { this.statusCode = code; return this; },
+            send(body) { this.body = String(body); return this; },
+            setHeader() {}
+        };
+        await retrieveFile(binaryDeletedReq, binaryDeletedRes);
+        assert.strictEqual(binaryDeletedRes.statusCode, 200, 'binary deletion should produce a diff');
+        const binaryDeletedMatch = binaryDeletedRes.body.match(/atob\('([^']+)'\)/);
+        assert.ok(binaryDeletedMatch, 'binary deletion response should embed a diff');
+        const binaryDeletedDiff = Buffer.from(binaryDeletedMatch[1], 'base64').toString('utf8');
+        assert.match(binaryDeletedDiff, /Binary files a\/binary-deleted\.dat and \/dev\/null differ/);
+        assert.doesNotMatch(binaryDeletedDiff, /(?:a\/)?before|(?:b\/)?after/);
+        console.log('PASS /access diff relabels binary deletion temporary paths');
+
+        if (process.platform !== 'win32') {
+            const fifoPath = path.join(tmpRepo, 'special-fifo.txt');
+            fs.writeFileSync(fifoPath, 'tracked fifo baseline\n');
+            execFileSync('git', ['-c', 'core.fsmonitor=false', 'add', 'special-fifo.txt'], { cwd: tmpRepo });
+            execFileSync('git', ['-c', 'core.fsmonitor=false', 'commit', '-q', '-m', 'add fifo fixture'], { cwd: tmpRepo });
+            fs.unlinkSync(fifoPath);
+            execFileSync('mkfifo', [fifoPath]);
+            const fifoToken = 'fifo-token';
+            tokenStore[fifoToken] = {
+                filePath: fifoPath,
+                expiryDate: new Date(Date.now() + 60_000).toISOString()
+            };
+            fs.writeFileSync(storePath, JSON.stringify(tokenStore, null, 2), { encoding: 'utf8', mode: 0o600 });
+            const childScript = `
+                const { retrieveFile } = require('./serverModules/fileAccessHandler');
+                const req = { params: { token: 'fifo-token' }, query: { diff: '1' } };
+                const res = {
+                    statusCode: 200,
+                    body: '',
+                    status(code) { this.statusCode = code; return this; },
+                    send(body) { this.body = String(body); return this; },
+                    setHeader() {}
+                };
+                retrieveFile(req, res).then(() => {
+                    console.log(JSON.stringify({ statusCode: res.statusCode, body: res.body }));
+                });
+            `;
+            const fifoChild = spawnSync(process.execPath, ['-e', childScript], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 3000
+            });
+            assert.notStrictEqual(fifoChild.error?.code, 'ETIMEDOUT', 'FIFO diff must not block the Node process');
+            assert.strictEqual(fifoChild.status, 0, fifoChild.stderr || fifoChild.stdout);
+            const fifoResult = JSON.parse(fifoChild.stdout.trim().split('\n').pop());
+            assert.strictEqual(fifoResult.statusCode, 500, 'FIFO working-tree path should fail closed');
+            assert.match(fifoResult.body, /not a regular file or symlink/i);
+            console.log('PASS /access diff rejects FIFOs before synchronous reads');
+        }
 
         const oversizedPath = path.join(tmpRepo, 'oversized.txt');
         fs.writeFileSync(oversizedPath, 'small\n');

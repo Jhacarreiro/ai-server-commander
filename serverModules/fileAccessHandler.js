@@ -118,13 +118,18 @@ module.exports.retrieveFile = async (req, res) => {
 
             const { stdout: stagedOutput } = await execFileAsync(
                 'git',
-                ['-c', 'core.fsmonitor=false', 'ls-files', '--stage', '--', relativePath],
+                ['-c', 'core.fsmonitor=false', 'ls-files', '--stage', '-z', '--', `:(literal)${relativePath}`],
                 { ...gitOptions, cwd: repoRoot }
             );
-            const stagedLines = stagedOutput.split('\n').filter(Boolean);
+            const stagedLines = stagedOutput.split('\0').filter(Boolean);
             let diffOutput = '';
             if (stagedLines.length > 0) {
-                const stageZero = stagedLines.find((line) => /^\d+\s+[0-9a-f]+\s+0\t/.test(line));
+                const stageZero = stagedLines.find((line) => {
+                    const tab = line.indexOf('\t');
+                    return tab > 0
+                        && /^\d+\s+[0-9a-f]+\s+0$/.test(line.slice(0, tab))
+                        && line.slice(tab + 1) === relativePath;
+                });
                 if (!stageZero) {
                     throw new Error('Target file has no stage-0 index entry.');
                 }
@@ -164,6 +169,9 @@ module.exports.retrieveFile = async (req, res) => {
                         currentBlob = Buffer.from(fs.readlinkSync(tokenInfo.filePath));
                         currentMode = '120000';
                     } else {
+                        if (!currentStat.isFile()) {
+                            throw new Error('Target path is not a regular file or symlink.');
+                        }
                         if (currentStat.size > 8 * 1024 * 1024) {
                             throw new Error('Target file is too large to diff safely.');
                         }
@@ -219,7 +227,13 @@ module.exports.retrieveFile = async (req, res) => {
                         body = body
                             .replace(/^diff --git a\/before b\/after$/m, `diff --git a/${safeLabel} b/${safeLabel}`)
                             .replace(/^--- a\/before$/m, `--- a/${safeLabel}`)
-                            .replace(/^\+\+\+ b\/after$/m, currentExists ? `+++ b/${safeLabel}` : '+++ /dev/null');
+                            .replace(/^\+\+\+ b\/after$/m, currentExists ? `+++ b/${safeLabel}` : '+++ /dev/null')
+                            .replace(
+                                /^Binary files (?:a\/)?before and (?:b\/)?after differ$/m,
+                                currentExists
+                                    ? `Binary files a/${safeLabel} and b/${safeLabel} differ`
+                                    : `Binary files a/${safeLabel} and /dev/null differ`
+                            );
                     }
 
                     const header = `diff --git a/${safeLabel} b/${safeLabel}`;
