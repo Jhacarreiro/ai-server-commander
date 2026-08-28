@@ -90,6 +90,7 @@ Minimal configuration:
 ```json
 {
   "port": 3000,
+  "host": "127.0.0.1",
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-with-a-long-random-secret",
   "mcpToken": "replace-with-a-separate-long-random-secret"
@@ -129,6 +130,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | Key | Required | Purpose |
 |---|---:|---|
 | `port` | Yes | Local TCP port used by the Node server. |
+| `host` | Yes | Address the Node server binds. Use `127.0.0.1` behind a same-host reverse proxy. Use `0.0.0.0` or `::` only when clients or a remote proxy must reach the process directly. IPv6 literals such as `::1` are accepted. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
@@ -136,6 +138,8 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
 
 LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency chain could not be updated safely. Existing configurations with `useLocalTunnel: true` now fail with migration guidance. Use a maintained HTTPS reverse proxy or tunnel and set `productionDomain` explicitly.
+
+`host` is required. Earlier releases omitted it and bound all interfaces. Configurations that still omit `host` now fail at startup instead of silently switching to loopback. Set `"host": "127.0.0.1"` for the recommended same-host reverse-proxy topology, or `"host": "0.0.0.0"` / `"host": "::"` only if you intend to accept connections on every interface. Interactive setup writes `127.0.0.1`.
 
 ### Environment variables
 
@@ -385,6 +389,10 @@ CI runs checks on supported Node versions for every push and pull request.
 ### Public URLs use `http://` or the wrong hostname
 
 Set `productionDomain` to the exact external HTTPS origin and forward `Host` and `X-Forwarded-Proto` from the reverse proxy.
+
+### The server is unreachable after an upgrade
+
+Startup now requires `host`. If `config.json` still omits it, the process fails with migration guidance instead of binding all interfaces. Add `"host": "127.0.0.1"` when a same-host reverse proxy forwards to the Node process. Add `"host": "0.0.0.0"` or `"host": "::"` only when a remote client or proxy must connect to the listen socket directly.
 
 ### The MCP client asks to reconnect after an upgrade or restart
 

@@ -36,7 +36,7 @@ sudo -u ai-commander cp config.example.json config.json
 sudo chmod 600 config.json
 ```
 
-Edit `config.json` with the public HTTPS origin and fresh random tokens.
+Edit `config.json` with the public HTTPS origin, a listen `host` (`127.0.0.1` for a same-host reverse proxy), and fresh random tokens.
 
 ## systemd example
 
@@ -105,6 +105,12 @@ Set `productionDomain` to `https://commander.example.com`.
 
 LocalTunnel support was removed in v1.0.8. Deployments upgrading from `useLocalTunnel: true` must move to a maintained reverse proxy, VPN or tunnel and set `productionDomain` to the external HTTPS origin.
 
+`host` is now required. Earlier releases omitted it and bound all interfaces (`::` / `0.0.0.0`). Existing `config.json` files without `host` fail at startup with migration guidance rather than silently switching to loopback, which would make remote deployments without a same-host reverse proxy unreachable.
+
+- Set `"host": "127.0.0.1"` for the recommended same-host reverse-proxy topology (the Nginx example below uses `proxy_pass http://127.0.0.1:3000`).
+- Set `"host": "0.0.0.0"` or `"host": "::"` only when a remote client or proxy must reach the Node process directly.
+- IPv6 literals such as `::1` are valid `host` values; startup logs them as `http://[::1]:3000`.
+
 ## Post-deployment validation
 
 ```bash
@@ -141,11 +147,12 @@ Suggested process:
 1. Download or clone the new tagged release into a new directory.
 2. Run `npm ci --omit=dev`.
 3. Link the existing `config.json` and `runtime/` state, and preserve the same `OAUTH_STATE_PATH`.
-4. Run `npm run check` and `npm test` before cutover.
-5. Start a staging instance on another port.
-6. Validate REST, MCP, OAuth metadata and OpenAPI.
-7. Switch the stable symlink and restart the service.
-8. Keep the previous release intact until the new release has run cleanly.
+4. If `config.json` has no `host`, add `"host": "127.0.0.1"` for a same-host reverse proxy or `"host": "0.0.0.0"` / `"host": "::"` only for direct remote reachability. Startup fails until `host` is set.
+5. Run `npm run check` and `npm test` before cutover.
+6. Start a staging instance on another port.
+7. Validate REST, MCP, OAuth metadata and OpenAPI.
+8. Switch the stable symlink and restart the service.
+9. Keep the previous release intact until the new release has run cleanly.
 
 ## Rollback
 
