@@ -1,6 +1,7 @@
 const fs = require( 'fs' );
 const {
-    checkJavaScriptFile
+    checkJavaScriptFile,
+    checkJavaScriptContent
 } = require( '../serverModules/checkjs' );
 const beautify = require( 'js-beautify' ).js;
 const {
@@ -173,8 +174,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
         }
 
-        if ( filePath.endsWith( '.js' ) ) {
-            debugger;
+        if ( /\.(?:js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i.test( filePath ) ) {
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
                 await fs.promises.writeFile( filePath, replaceResult.originalContent );
@@ -202,13 +202,38 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             return;
         }
 
-        if (filePath.endsWith('.js')) {
-            const beautifiedContent = beautify(replaceResult.updatedContent, {
-                indent_size: 2,
-                //space_in_paren: true
-            });
-            await fs.promises.writeFile(filePath, beautifiedContent);
-            responseMessage += `\nFile content: ${beautifiedContent}`;
+        if ( /\.(?:js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i.test( filePath ) ) {
+            const hadBom = replaceResult.updatedContent.charCodeAt(0) === 0xFEFF;
+            // js-beautify joins ASI-restricted productions: `return\n{a:1}`
+            // becomes `return {a:1}` - valid syntax, but the function now
+            // RETURNS the object instead of undefined (silent runtime behavior
+            // change, empirically reproduced for return/regex/backtick).
+            // Detect the hazard and skip beautify for such files.
+            const asyHazard = /(?:^|[;{}\s])(?:return|break|continue|throw|yield|await)\s*\n|\+\+\s*\n|--\s*\n/.test( replaceResult.updatedContent );
+            let finalContent;
+            if (asyHazard) {
+                finalContent = replaceResult.updatedContent;
+            } else {
+                finalContent = beautify(hadBom ? replaceResult.updatedContent.slice(1) : replaceResult.updatedContent, {
+                    indent_size: 2,
+                    //space_in_paren: true
+                });
+                // Re-validate AFTER beautify (defense in depth for anything the
+                // hazard regex misses); revert on invalid output.
+                const beautifyIssues = await checkJavaScriptContent(finalContent);
+                if ( beautifyIssues.length > 0 ) {
+                    await fs.promises.writeFile( filePath, replaceResult.originalContent );
+                    responseMessage += "\nError happened, explain it to user";
+                    responseMessage += "\nBeautification produced invalid syntax; file reverted to original version before changes";
+                    responseMessage += '\nIssues found after formatting: \n' + JSON.stringify( beautifyIssues );
+                    res.status( 400 ).send( responseMessage );
+                    return;
+                }
+                // Preserve a leading UTF-8 BOM (js-beautify drops it).
+                if (hadBom) finalContent = '\uFEFF' + finalContent;
+            }
+            await fs.promises.writeFile(filePath, finalContent);
+            responseMessage += `\nFile content: ${finalContent}`;
         } else {
             responseMessage += `\nFile content: ${replaceResult.updatedContent || replaceResult.originalContent}`;
         }
