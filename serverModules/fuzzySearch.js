@@ -1,9 +1,7 @@
 var { distance } = require("fastest-levenshtein");
 function recursiveFuzzyIndexOf(text, query, start = 0, end = null, parentDistance = Infinity) {
     if (end === null) end = text.length;
-    console.log([text.substr(start,end), end - start, 2 * query.length])
     if (end - start <= 2 * query.length) {
-        console.log('iterative')
         return iterativeReduction(text, query, start, end, parentDistance);
     }
     let midPoint = start + Math.floor((end - start) / 2);
@@ -33,7 +31,6 @@ function iterativeReduction(text, query, start, end, parentDistance) {
         bestStart++;
         const smallerString = text.substring(bestStart + 1, bestEnd);
         nextDistance = distance(smallerString, query);
-        console.log(smallerString, nextDistance, bestDistance)
     }
 
     nextDistance = distance(text.substring(bestStart, bestEnd - 1), query);
@@ -43,7 +40,6 @@ function iterativeReduction(text, query, start, end, parentDistance) {
         bestEnd--;
         const smallerString = text.substring(bestStart, bestEnd - 1);
         nextDistance = distance(smallerString, query);
-        console.log(smallerString, nextDistance, bestDistance)
     }
     return { start: bestStart, end: bestEnd, value: text.substring(bestStart, bestEnd),distance: bestDistance };
 }
