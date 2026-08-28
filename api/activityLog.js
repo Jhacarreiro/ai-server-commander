@@ -10,6 +10,12 @@ const globalLogPath = path.join(activityRoot, 'global.jsonl');
 const globalStatusPath = path.join(activityRoot, 'status.json');
 const contextsPath = path.join(activityRoot, 'contexts.json');
 const MAX_TEXT = 500;
+const MAX_ACTIVITY_FIELD = Math.max(1, Number.parseInt(process.env.MAX_ACTIVITY_FIELD || '256', 10) || 256);
+function boundField(value, fallback = null) {
+    if (value == null) return fallback;
+    const raw = String(value);
+    return raw.length > MAX_ACTIVITY_FIELD ? raw.slice(0, MAX_ACTIVITY_FIELD) : raw;
+}
 const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|\b[A-Za-z0-9_]{0,80}(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*[^\s'";]+)/gi;
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
@@ -28,12 +34,13 @@ function getActivityContext(req, overrides = {}) {
     const body = req && typeof req.body === 'object' ? req.body : {};
     const query = req && typeof req.query === 'object' ? req.query : {};
     const headers = req && typeof req.headers === 'object' ? req.headers : {};
-    const conversationId = firstValue(overrides.conversationId, query.conversationId, query.conversation_id, body.conversationId, body.conversation_id, headers['openai-conversation-id'], headers['x-conversation-id']) || 'unknown';
+    const conversationId = boundField(firstValue(overrides.conversationId, query.conversationId, query.conversation_id, body.conversationId, body.conversation_id, headers['openai-conversation-id'], headers['x-conversation-id']) || 'unknown', 'unknown');
     const conversationKey = safeId(conversationId, 'unknown');
     const contexts = loadContexts();
     const saved = contexts.conversations[conversationKey] || {};
-    const taskId = firstValue(overrides.taskId, query.taskId, query.task_id, body.taskId, body.task_id, saved.taskId) || 'default';
-    const taskTitle = firstValue(overrides.taskTitle, query.taskTitle, query.task_title, body.taskTitle, body.task_title, saved.taskTitle) || null;
+    const taskId = boundField(firstValue(overrides.taskId, query.taskId, query.task_id, body.taskId, body.task_id, saved.taskId) || 'default', 'default');
+    const taskTitleRaw = firstValue(overrides.taskTitle, query.taskTitle, query.task_title, body.taskTitle, body.task_title, saved.taskTitle);
+    const taskTitle = taskTitleRaw ? boundField(taskTitleRaw) : null;
     const taskKey = safeId(taskId, 'default');
     return { conversationId, conversationKey, taskId, taskKey, taskTitle };
 }
