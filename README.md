@@ -376,7 +376,8 @@ The smoke suite covers:
 - OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
 - native setup and Firestore service-account compatibility;
 - `SAFE_MODE` results;
-- OpenAPI generation and version alignment.
+- OpenAPI generation and version alignment;
+- dead-module deletion (`sentenceVector`/`transformers`) and post-change route startup.
 
 CI runs checks on supported Node versions for every push and pull request.
 
