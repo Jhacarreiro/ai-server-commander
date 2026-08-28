@@ -127,7 +127,7 @@ function assert(condition, label, details = '') {
     assert(!String(r.text).includes('SIBLING_SECRET'), 'sibling-prefix response does not leak sibling file bytes');
 
     r = await request('GET', '/api/read-or-edit-file?filePath=notes.txt&filePath=sample.js');
-    assert(r.status === 400 && r.body && /filePath is required/i.test(r.body.error || ''), 'GET rejects repeated filePath query values', JSON.stringify({ status: r.status, body: r.body }));
+    assert(r.status === 400 && r.body && /file path is required/i.test(r.body.error || ''), 'GET rejects repeated filePath query values', JSON.stringify({ status: r.status, body: r.body }));
 
     r = await request('GET', '/api/read-or-edit-file?filePath=missing-file.txt');
     assert(r.status === 404 && r.body && /not found/i.test(r.body.error || ''), 'GET missing file returns 404', JSON.stringify(r.body));

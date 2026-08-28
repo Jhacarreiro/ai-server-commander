@@ -25,8 +25,8 @@ const path = require('node:path');
 // query parameters as an array). Resolve and bound-check so ../ traversal
 // and sibling-prefix paths cannot escape the workspace.
 const resolveWorkspaceFilePath = ( filePath, currentDir ) => {
-    if ( typeof filePath !== 'string' || filePath.length === 0 ) {
-        return { error: 'filePath is required', status: 400 };
+    if ( typeof filePath !== 'string' || !filePath.trim() ) {
+        return { error: 'File path is required.', status: 400 };
     }
     const workspaceRoot = path.resolve( currentDir );
     const resolvedPath = path.resolve( workspaceRoot, filePath );
@@ -152,9 +152,6 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( typeof filePath !== 'string' || !filePath.trim() ) {
-        return res.status( 400 ).json( { error: 'File path is required.' } );
-    }
     const resolved = resolveWorkspaceFilePath( filePath, currentDir );
     if ( resolved.error ) {
         return res.status( resolved.status ).json( { error: resolved.error } );
