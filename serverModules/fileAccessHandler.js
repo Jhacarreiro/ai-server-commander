@@ -1,8 +1,11 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const {log} = require("../serverModules/logger");
-const simpleGit = require("simple-git");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const execFileAsync = promisify(execFile);
 
 const tokenStorePath = path.join(__dirname, "../tokenStore.json");
 
@@ -88,11 +91,161 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     if (req.query.diff) {
-        // The file may live in a different git repository than the server's own
-        // checkout; run the diff from the file's directory.
-        const git = simpleGit({ baseDir: path.dirname(tokenInfo.filePath) });
         try {
-            const diffOutput = await git.diff(['--', path.basename(tokenInfo.filePath)]);
+            // Treat the target repository as data, not executable configuration.
+            // Git plumbing only locates/reads the stage-0 blob. The actual comparison
+            // runs as `git diff --no-index` in a private temporary directory with no
+            // repository, no system/global config, and executable diff/textconv paths
+            // disabled. Repository-local attributes/filters/hooks are therefore never
+            // consulted while producing the displayed diff.
+            const targetDir = path.dirname(tokenInfo.filePath);
+            const gitOptions = {
+                cwd: targetDir,
+                encoding: 'utf8',
+                maxBuffer: 16 * 1024 * 1024,
+                timeout: 5000
+            };
+            const { stdout: rootOutput } = await execFileAsync(
+                'git',
+                ['-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'],
+                gitOptions
+            );
+            const repoRoot = rootOutput.trim();
+            const relativePath = path.relative(repoRoot, tokenInfo.filePath).split(path.sep).join('/');
+            if (!relativePath || relativePath === '..' || relativePath.startsWith('../') || path.isAbsolute(relativePath)) {
+                throw new Error('Target file is not inside its Git repository.');
+            }
+
+            const { stdout: stagedOutput } = await execFileAsync(
+                'git',
+                ['-c', 'core.fsmonitor=false', 'ls-files', '--stage', '--', relativePath],
+                { ...gitOptions, cwd: repoRoot }
+            );
+            const stagedLines = stagedOutput.split('\n').filter(Boolean);
+            let diffOutput = '';
+            if (stagedLines.length > 0) {
+                const stageZero = stagedLines.find((line) => /^\d+\s+[0-9a-f]+\s+0\t/.test(line));
+                if (!stageZero) {
+                    throw new Error('Target file has no stage-0 index entry.');
+                }
+                const match = stageZero.match(/^(\d+)\s+([0-9a-f]+)\s+0\t/);
+                if (!match) {
+                    throw new Error('Could not parse target index entry.');
+                }
+                const indexMode = match[1];
+                const indexHash = match[2];
+
+                const { stdout: indexSizeOutput } = await execFileAsync(
+                    'git',
+                    ['-c', 'core.fsmonitor=false', 'cat-file', '-s', indexHash],
+                    { ...gitOptions, cwd: repoRoot }
+                );
+                const indexSize = Number.parseInt(indexSizeOutput.trim(), 10);
+                if (!Number.isSafeInteger(indexSize) || indexSize < 0 || indexSize > 8 * 1024 * 1024) {
+                    throw new Error('Target file is too large to diff safely.');
+                }
+                const { stdout: indexBlob } = await execFileAsync(
+                    'git',
+                    ['-c', 'core.fsmonitor=false', 'cat-file', 'blob', indexHash],
+                    { ...gitOptions, cwd: repoRoot, encoding: null }
+                );
+
+                let currentStat = null;
+                try {
+                    currentStat = fs.lstatSync(tokenInfo.filePath);
+                } catch (error) {
+                    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
+                }
+                const currentExists = currentStat !== null;
+                let currentBlob = Buffer.alloc(0);
+                let currentMode = null;
+                if (currentStat) {
+                    if (currentStat.isSymbolicLink()) {
+                        currentBlob = Buffer.from(fs.readlinkSync(tokenInfo.filePath));
+                        currentMode = '120000';
+                    } else {
+                        if (currentStat.size > 8 * 1024 * 1024) {
+                            throw new Error('Target file is too large to diff safely.');
+                        }
+                        currentBlob = fs.readFileSync(tokenInfo.filePath);
+                        currentMode = (currentStat.mode & 0o111) ? '100755' : '100644';
+                    }
+                }
+
+                if (currentBlob.length > 8 * 1024 * 1024) {
+                    throw new Error('Target file is too large to diff safely.');
+                }
+
+                const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-diff-'));
+                try {
+                    const beforePath = path.join(tmpDir, 'before');
+                    const afterPath = path.join(tmpDir, 'after');
+                    const emptyConfigPath = path.join(tmpDir, 'empty-gitconfig');
+                    fs.writeFileSync(beforePath, indexBlob, { mode: 0o600 });
+                    fs.writeFileSync(afterPath, currentBlob, { mode: 0o600 });
+                    fs.writeFileSync(emptyConfigPath, '', { mode: 0o600 });
+
+                    const safeLabel = relativePath.replace(/[\r\n\t]/g, '_');
+                    const diffEnv = {
+                        ...process.env,
+                        GIT_CONFIG_NOSYSTEM: '1',
+                        GIT_CONFIG_GLOBAL: emptyConfigPath,
+                        GIT_PAGER: 'cat',
+                        GIT_OPTIONAL_LOCKS: '0'
+                    };
+                    let body = '';
+                    try {
+                        const result = await execFileAsync(
+                            'git',
+                            ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--', 'before', 'after'],
+                            {
+                                cwd: tmpDir,
+                                env: diffEnv,
+                                encoding: 'utf8',
+                                maxBuffer: 16 * 1024 * 1024,
+                                timeout: 5000
+                            }
+                        );
+                        body = result.stdout;
+                    } catch (error) {
+                        if (error.code === 1 && typeof error.stdout === 'string') {
+                            body = error.stdout;
+                        } else {
+                            throw error;
+                        }
+                    }
+
+                    if (body) {
+                        body = body
+                            .replace(/^diff --git a\/before b\/after$/m, `diff --git a/${safeLabel} b/${safeLabel}`)
+                            .replace(/^--- a\/before$/m, `--- a/${safeLabel}`)
+                            .replace(/^\+\+\+ b\/after$/m, currentExists ? `+++ b/${safeLabel}` : '+++ /dev/null');
+                    }
+
+                    const header = `diff --git a/${safeLabel} b/${safeLabel}`;
+                    const metadata = [];
+                    if (!currentExists) {
+                        metadata.push(`deleted file mode ${indexMode}`);
+                    } else if (currentMode && indexMode !== currentMode) {
+                        metadata.push(`old mode ${indexMode}`, `new mode ${currentMode}`);
+                    }
+
+                    if (!body && metadata.length > 0) {
+                        body = `${header}\n${metadata.join('\n')}\n`;
+                    } else if (body && metadata.length > 0) {
+                        const lines = body.split('\n');
+                        if (lines[0] === header) {
+                            lines.splice(1, 0, ...metadata);
+                            body = lines.join('\n');
+                        } else {
+                            body = `${header}\n${metadata.join('\n')}\n${body}`;
+                        }
+                    }
+                    diffOutput = body;
+                } finally {
+                    fs.rmSync(tmpDir, { recursive: true, force: true });
+                }
+            }
             const htmlDiff = `
                 <!DOCTYPE html>
                 <html>

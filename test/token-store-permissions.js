@@ -5,10 +5,11 @@ const { createToken } = require('../serverModules/fileAccessHandler');
 
 const root = path.resolve(__dirname, '..');
 const storePath = path.join(root, 'tokenStore.json');
-const backupPath = path.join(root, 'tokenStore.json.test-backup');
 
 (async () => {
-    if (fs.existsSync(storePath)) fs.copyFileSync(storePath, backupPath);
+    const originalStore = fs.existsSync(storePath)
+        ? { data: fs.readFileSync(storePath), mode: fs.statSync(storePath).mode & 0o777 }
+        : null;
     try {
         // Fresh-store creation path: with no tokenStore.json present,
         // createToken must create it directly with mode 0600.
@@ -44,9 +45,9 @@ const backupPath = path.join(root, 'tokenStore.json.test-backup');
         assert.strictEqual(check('tokenStore.json.1234.abcd.tmp'), true, 'atomic tmp sidecar is ignored');
         console.log('PASS tokenStore.json and sidecars are gitignored');
     } finally {
-        if (fs.existsSync(backupPath)) {
-            fs.copyFileSync(backupPath, storePath);
-            fs.unlinkSync(backupPath);
+        if (originalStore) {
+            fs.writeFileSync(storePath, originalStore.data, { mode: originalStore.mode });
+            fs.chmodSync(storePath, originalStore.mode);
         } else if (fs.existsSync(storePath)) {
             fs.unlinkSync(storePath);
         }
