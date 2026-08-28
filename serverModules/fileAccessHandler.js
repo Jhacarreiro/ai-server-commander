@@ -16,7 +16,24 @@ const readTokenStore = () => {
 
 // Function to write to the token store
 const writeToTokenStore = (tokenStore) => {
-    fs.writeFileSync(tokenStorePath, JSON.stringify(tokenStore, null, 2), "utf8");
+    // Upgrade safety: an existing store from before the 0600 fix may still be
+    // 0644. Tighten it BEFORE writing so an interruption between write and
+    // chmod cannot leave new bearer-token mappings readable under the old mode.
+    if (fs.existsSync(tokenStorePath)) {
+        try { fs.chmodSync(tokenStorePath, 0o600); } catch (_) {}
+    }
+    const payload = JSON.stringify(tokenStore, null, 2);
+    // Write via an owner-only temporary file and atomic rename so the new
+    // contents are never visible under the legacy permissive mode.
+    const tmpPath = `${tokenStorePath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    try {
+        fs.writeFileSync(tmpPath, payload, { encoding: "utf8", mode: 0o600 });
+        try { fs.chmodSync(tmpPath, 0o600); } catch (_) {}
+        fs.renameSync(tmpPath, tokenStorePath);
+        try { fs.chmodSync(tokenStorePath, 0o600); } catch (_) {}
+    } finally {
+        if (fs.existsSync(tmpPath)) try { fs.unlinkSync(tmpPath); } catch (_) {}
+    }
 };
 
 
@@ -71,9 +88,11 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     if (req.query.diff) {
-        const git = simpleGit();
+        // The file may live in a different git repository than the server's own
+        // checkout; run the diff from the file's directory.
+        const git = simpleGit({ baseDir: path.dirname(tokenInfo.filePath) });
         try {
-            const diffOutput = await git.diff(['--', tokenInfo.filePath]);
+            const diffOutput = await git.diff(['--', path.basename(tokenInfo.filePath)]);
             const htmlDiff = `
                 <!DOCTYPE html>
                 <html>
