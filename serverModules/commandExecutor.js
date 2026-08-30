@@ -13,6 +13,7 @@ const MAX_SCRIPT_BODY_BYTES = positiveInteger(process.env.MAX_SCRIPT_BODY_BYTES,
 const MAX_CWD_BYTES = 1024;
 const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
+const DEFAULT_SHELL = process.env.SHELL || (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh');
 
 const blockedCommandPatterns = [
     /rm\s+-rf\s+\/(?:\s|$)/i,
@@ -72,7 +73,7 @@ function findBlockedPattern(command) {
 function executeBounded(options) {
     const {
         command,
-        shell = process.env.SHELL || '/bin/bash',
+        shell = DEFAULT_SHELL,
         cwd = process.env.HOME || process.cwd(),
         timeoutMs = COMMAND_TIMEOUT_MS,
         maxOutputChars = MAX_OUTPUT_CHARS,
@@ -155,6 +156,7 @@ function getActiveCommandIds() {
 
 module.exports = {
     COMMAND_TIMEOUT_MS,
+    DEFAULT_SHELL,
     MAX_CWD_BYTES,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
