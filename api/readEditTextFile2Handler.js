@@ -166,23 +166,11 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
-        // Mint once and reuse: createToken rotates (one active token per
-        // file), so a second mint would revoke the File url immediately.
-        const url = createToken( getURL, filePath );
-        let responseMessage = `
-        File url: ${url}
-        Changed diff url: ${url}?diff=1`;
-
-        if ( replaceResult.fuzzyReplacements.length > 0 ) {
-            responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
-        }
-
         if ( filePath.endsWith( '.js' ) ) {
-            debugger;
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
                 await fs.promises.writeFile( filePath, replaceResult.originalContent );
-                responseMessage += "\nError happened, explain it to user";
+                let responseMessage = "Error happened, explain it to user";
                 responseMessage += "\nFile reverted to original form before changes";
                 responseMessage += '\nIssues found in the file: \n' + JSON.stringify( issues );
                 responseMessage += `\nFile content before change: ${replaceResult.originalContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
@@ -196,7 +184,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         if ( replaceResult.unsuccessfulReplacements.length > 0 ) {
             await fs.promises.writeFile( filePath, replaceResult.originalContent );
             let unsuccessfulMessages = replaceResult.unsuccessfulReplacements.join( "; " );
-            responseMessage += "\nError happened, explain it to user";
+            let responseMessage = "Error happened, explain it to user";
             responseMessage += `\nUnsuccessful replacements due to missing texts: ${unsuccessfulMessages}`;
             responseMessage += `\nFile reverted to original version before changes`;
             if ( replacements.length > replaceResult.unsuccessfulReplacements.length ) {
@@ -204,6 +192,18 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             }
             res.status( 400 ).send( responseMessage );
             return;
+        }
+
+        // Mint only after validation/rollback exits: createToken rotates
+        // (one active token per file), so a rejected edit must not revoke
+        // a still-valid prior URL.
+        const url = createToken( getURL, filePath );
+        let responseMessage = `
+        File url: ${url}
+        Changed diff url: ${url}?diff=1`;
+
+        if ( replaceResult.fuzzyReplacements.length > 0 ) {
+            responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
         }
 
         if (filePath.endsWith('.js')) {

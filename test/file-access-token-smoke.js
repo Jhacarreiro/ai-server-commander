@@ -166,7 +166,7 @@ async function waitForServer(logPath) {
         await retrieveFile({ params: { token: secondToken }, query: { diff: '1' } }, diffRes);
         await diffRes.done;
         // bwrap sandbox bind-mounts only /work; its .git file points to an external mirror path not bound, so git diff can fail with "not a git repository". Treat that sandbox artifact as a pass — the 200/diff2html path is verified locally.
-        if (diffRes.statusCode === 500 && (String(diffRes.sent).includes('not a git repository') || String(diffRes.sent).includes('is outside repository') || String(diffRes.sent).includes('fatal:'))) {
+        if (diffRes.statusCode === 500 && String(diffRes.sent).includes('not a git repository')) {
             console.log('PASS active token serves the diff view (sandbox: git repo not bound, skipped)');
         } else {
             assert(diffRes.statusCode === 200 && String(diffRes.sent).includes('diff2html'), 'active token serves the diff view', JSON.stringify({ status: diffRes.statusCode, sentType: typeof diffRes.sent }));
@@ -185,6 +185,26 @@ async function waitForServer(logPath) {
 
         createToken(() => baseUrl, otherPath);
         assert(!readStore().expiredtok, 'createToken drops expired tokens from the store');
+
+        const priorEditUrl = createToken(() => baseUrl, editTarget);
+        const priorEditToken = tokenFromUrl(priorEditUrl);
+        const rejectHandler = readEditTextFileHandler(() => baseUrl);
+        const rejectRes = mockRes();
+        await rejectHandler({
+            method: 'POST',
+            query: {},
+            body: {
+                filePath: editTarget,
+                replacements: [{ originalText: 'does-not-exist-xyz', replacementText: 'nope' }]
+            }
+        }, rejectRes);
+        await rejectRes.done;
+        assert(rejectRes.statusCode === 400, 'rejected edit returns 400 without rotating', JSON.stringify({ status: rejectRes.statusCode, sent: String(rejectRes.sent).slice(0, 240) }));
+        assert(Boolean(readStore()[priorEditToken]), 'rejected edit preserves the existing token');
+        const priorStill = mockRes();
+        await retrieveFile({ params: { token: priorEditToken }, query: {} }, priorStill);
+        await priorStill.done;
+        assert(priorStill.statusCode === 200 && String(priorStill.sent).includes('alpha'), 'preserved token still serves the unedited file');
 
         const handler = readEditTextFileHandler(() => baseUrl);
         const editRes = mockRes();
