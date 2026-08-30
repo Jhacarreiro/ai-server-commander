@@ -42,6 +42,14 @@ function parseRequest(req) {
     const command = req.method === 'GET' ? query.command : (body.command || query.command);
     const script = body.script;
 
+    // Both command AND script supplied: the input schema declares
+    // oneOf(command|script); accepting both and silently picking one
+    // (MCP picks script, REST picks inline - opposite winners for the
+    // same payload) hides a client bug behind a successful-looking run.
+    if (req.method !== 'GET' && typeof command === 'string' && command.trim() && typeof script === 'string' && script.trim()) {
+        return { error: true, status: 400, message: 'Provide either command or script, not both.' };
+    }
+
     if (mode === 'inline' && (typeof command !== 'string' || !command.trim())) {
         return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
     }
