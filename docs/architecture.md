@@ -51,7 +51,7 @@ Remote MCP client ── OAuth/token ───── MCP route ────┘  
 | `api/terminal.js` | Shared request parsing and command result shaping. |
 | `api/mcp.js` | MCP JSON-RPC adapter and tool descriptor. |
 | `api/oauth.js` | OAuth metadata, registration, consent, token rotation and revocation endpoints. |
-| `serverModules/oauthStore.js` | Atomic persistent OAuth state with hashed secrets and tokens. |
+| `serverModules/oauthStore.js` | Atomic persistent OAuth state with hashed secrets and tokens, read-time expiry pruning, and lock-merged multi-writer persist. |
 | `api/activityLog.js` | Redacted activity records and context. |
 | `api/notices.js` | Scoped operational notices. |
 | `serverModules/swaggerSetup.js` | OpenAPI generation. |
