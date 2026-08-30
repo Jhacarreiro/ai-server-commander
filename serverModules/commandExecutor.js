@@ -1,4 +1,4 @@
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,6 +40,107 @@ function terminateEntry(entry, signal = 'SIGTERM') {
         return true;
     } catch {
         try { return entry.child.kill(signal); } catch { return false; }
+    }
+}
+
+function processGroupAlive(pid, child) {
+    if (process.platform === 'win32') return !!(child && child.exitCode === null);
+    if (!pid) return false;
+    try {
+        // Probe the group first: a reaped leader can leave descendants
+        // in the same pgid, and those still need SIGKILL.
+        process.kill(-pid, 0);
+        return true;
+    } catch {
+        try {
+            process.kill(pid, 0);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+
+// exec() silently drops `detached`, so process-group signals never reach
+// descendants. spawn() is what actually creates a new pgid.
+function spawnShellCommand(command, options, callback) {
+    const child = spawn(options.shell, ['-c', command], {
+        cwd: options.cwd,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const maxBuffer = options.maxBuffer || 1024 * 1024;
+    let stdout = '';
+    let stderr = '';
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let finished = false;
+
+    if (child.stdout) {
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', (chunk) => {
+            stdoutBytes += Buffer.byteLength(chunk);
+            if (stdoutBytes <= maxBuffer) stdout += chunk;
+        });
+    }
+    if (child.stderr) {
+        child.stderr.setEncoding('utf8');
+        child.stderr.on('data', (chunk) => {
+            stderrBytes += Buffer.byteLength(chunk);
+            if (stderrBytes <= maxBuffer) stderr += chunk;
+        });
+    }
+
+    const done = (error) => {
+        if (finished) return;
+        finished = true;
+        callback(error, stdout, stderr);
+    };
+    child.once('error', done);
+    child.once('close', (code, signal) => {
+        if (code === 0 && !signal) {
+            done(null);
+            return;
+        }
+        done(Object.assign(new Error('Command failed'), {
+            code: typeof code === 'number' ? code : 1,
+            signal
+        }));
+    });
+    return child;
+}
+
+function clearKillTimer(entry) {
+    if (!entry || !entry.killTimer) return;
+    clearTimeout(entry.killTimer);
+    entry.killTimer = null;
+}
+
+// A single SIGTERM is not enough: a child that traps/ignores TERM (or a
+// defunct group member) would keep the request pending forever with no
+// escalation. Wait briefly, then SIGKILL the group.
+function escalateToKill(entry, graceMs = 1500) {
+    if (!entry || !entry.child || !entry.child.pid) return;
+    const pid = entry.child.pid;
+    const child = entry.child;
+
+    // Own a single handle so completion can cancel it and a second
+    // interrupt cannot queue another SIGKILL.
+    clearKillTimer(entry);
+    entry.killTimer = setTimeout(() => {
+        entry.killTimer = null;
+        if (!processGroupAlive(pid, child)) return;
+        try {
+            if (process.platform !== 'win32') process.kill(-pid, 'SIGKILL');
+            else child.kill('SIGKILL');
+        } catch {
+            try { child.kill('SIGKILL'); } catch { /* already gone */ }
+        }
+    }, graceMs);
+
+    if (entry.timer) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
     }
 }
 
@@ -88,14 +189,16 @@ function executeBounded(options) {
             return;
         }
 
-        const entry = { child: null, interrupted: false, timedOut: false, timer: null };
-        const child = exec(command, {
+        const entry = { child: null, interrupted: false, timedOut: false, timer: null, killTimer: null };
+        const child = spawnShellCommand(command, {
             shell,
             cwd,
-            detached: process.platform !== 'win32',
             maxBuffer: Math.max(effectiveMaxOutput * 4, 1024 * 1024)
         }, (error, stdout, stderr) => {
             if (entry.timer) clearTimeout(entry.timer);
+            // Cancel SIGKILL only when the whole group is gone. If the
+            // leader exited first, keep the pending escalation.
+            if (!processGroupAlive(entry.child && entry.child.pid, entry.child)) clearKillTimer(entry);
             if (activeProcesses.get(activityId) === entry) activeProcesses.delete(activityId);
 
             const output = [
@@ -125,6 +228,7 @@ function executeBounded(options) {
         entry.timer = setTimeout(() => {
             entry.timedOut = true;
             terminateEntry(entry);
+            escalateToKill(entry);
         }, effectiveTimeout);
         activeProcesses.set(activityId, entry);
     });
@@ -146,6 +250,7 @@ function interruptCommand(activityId) {
 
     entry.interrupted = true;
     terminateEntry(entry);
+    escalateToKill(entry);
     return { interrupted: true, activityId: targetId };
 }
 
