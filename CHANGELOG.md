@@ -6,11 +6,16 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+### Fixed
+
+- First-run setup re-prompts on invalid port or public origin instead of crashing, and treats Ctrl-D/EOF as a clean cancellation that does not write `config.json`.
+
 ### Changed
 
 - MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
+- Configuration `port` now requires a whole decimal integer in 1..65535. Zero-padded digit strings such as `"00001"` remain valid; previously tolerated malformed values such as `"3000abc"`, `"1e3"` and floats fail validation so the setup wizard can retry.
 
 ### Added
 
