@@ -143,8 +143,10 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     if ( typeof filePath !== 'string' || !filePath.trim() ) {
         return res.status( 400 ).json( { error: 'File path is required.' } );
     }
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    // Fix absolute paths for bwrap sandbox (HOME=/home/exec, workdir=/work):
+    // naive startsWith fails for /work vs /home/exec, so use path.isAbsolute.
+    if ( !path.isAbsolute( filePath ) ) {
+        filePath = path.join( currentDir, filePath );
     }
 
     let replaceResult;
@@ -164,10 +166,12 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
+        // Mint once and reuse: createToken rotates (one active token per
+        // file), so a second mint would revoke the File url immediately.
         const url = createToken( getURL, filePath );
         let responseMessage = `
         File url: ${url}
-        Changed diff url: ${createToken(getURL, filePath)}?diff=1`;
+        Changed diff url: ${url}?diff=1`;
 
         if ( replaceResult.fuzzyReplacements.length > 0 ) {
             responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
