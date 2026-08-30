@@ -91,12 +91,14 @@ Minimal configuration:
 {
   "port": 3000,
   "productionDomain": "https://commander.example.com",
-  "authToken": "replace-with-a-long-random-secret",
-  "mcpToken": "replace-with-a-separate-long-random-secret"
+  "authToken": "replace-me",
+  "mcpToken": "replace-me-too"
 }
 ```
 
-Generate tokens with a cryptographically secure tool:
+The placeholder values shown above are invalid on purpose: the server rejects
+placeholder secrets at startup instead of running with publicly-known
+credentials. Generate tokens with a cryptographically secure tool:
 
 ```bash
 openssl rand -hex 32
