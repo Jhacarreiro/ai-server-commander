@@ -145,6 +145,7 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `COMMAND_TIMEOUT_MS` | `120000` | Server-wide maximum command duration. Client requests can ask for less, not more. |
 | `MAX_OUTPUT_CHARS` | `12000` | Server-wide maximum returned output. |
 | `MAX_SCRIPT_BODY_BYTES` | `524288` | Maximum script/request body size. |
+| `MAX_CONCURRENT_COMMANDS` | `8` | Server-wide maximum number of concurrently running commands. When the cap is reached, new command requests are rejected with HTTP 429 and the message `Too many concurrent commands (max N). Interrupt one or wait for completion.` |
 | `OAUTH_STATE_PATH` | `runtime/oauth-state.json` | Persistent OAuth client and token-hash state. |
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
