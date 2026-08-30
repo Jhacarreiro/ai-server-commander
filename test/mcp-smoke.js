@@ -299,6 +299,25 @@ function assert(condition, label, details = '') {
             status: response.status,
             error: response.body.error
         }, null, 2));
+        // --- tool-name regression (CodeRabbit: missing/blank/non-string/unknown) ---
+        response = await rpc({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: {} });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'tool name is required', 'MCP tool name missing -> 32602 tool name is required');
+
+        response = await rpc({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: '' } });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'tool name is required', 'MCP blank tool name -> 32602');
+
+        response = await rpc({ jsonrpc: '2.0', id: 14, method: 'tools/call', params: { name: '   ' } });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'tool name is required', 'MCP whitespace tool name -> 32602');
+
+        response = await rpc({ jsonrpc: '2.0', id: 15, method: 'tools/call', params: { name: 42 } });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'tool name is required', 'MCP non-string tool name -> 32602');
+
+        response = await rpc({ jsonrpc: '2.0', id: 16, method: 'tools/call', params: { name: 'unknown_tool_xyz' } });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'Unknown tool: unknown_tool_xyz', 'MCP unknown tool includes name');
+
+        response = await rpc({ jsonrpc: '2.0', id: 17, method: 'tools/call', params: { name: 'Run_Terminal_Command' } });
+        assert(response.body.error && response.body.error.code === -32602 && String(response.body.error.message).includes('Run_Terminal_Command'), 'MCP case-mismatch tool name -> Unknown tool with name');
+
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();
