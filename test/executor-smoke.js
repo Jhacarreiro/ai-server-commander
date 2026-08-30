@@ -1,3 +1,5 @@
+const { spawnSync } = require('child_process');
+const path = require('path');
 const { executeBounded, parseRequest } = require('../api/terminal');
 const { getActiveCommandIds, interruptCommand } = require('../serverModules/commandExecutor');
 
@@ -73,6 +75,44 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     assert(interruptCommand('test_second').interrupted, 'interrupt second command by id');
     const [firstResult, secondResult] = await Promise.all([first, second]);
     assert(firstResult.interrupted && secondResult.interrupted, 'interruption state preserved per command');
+
+    function classifySafeMode(commands) {
+        const classifier = `
+            process.env.SAFE_MODE = 'true';
+            const { findBlockedPattern } = require(${JSON.stringify(path.join(__dirname, '..', 'serverModules', 'commandExecutor.js'))});
+            const commands = ${JSON.stringify(commands)};
+            process.stdout.write(JSON.stringify(commands.map((command) => Boolean(findBlockedPattern(command)))));
+        `;
+        const result = spawnSync(process.execPath, ['-e', classifier], { encoding: 'utf8' });
+        assert(result.status === 0, 'SAFE_MODE classifier runs', result.stderr || result.stdout);
+        return JSON.parse(result.stdout);
+    }
+
+    const mustBlock = [
+        'rm -rf /',
+        'rm -rf / *',
+        'rm -rf /\nfoo',
+        'rm -rf / extra',
+        'rm --recursive --force /',
+        'rm --force --recursive /',
+        'rm --force --recursive / *',
+        'dd if=/dev/zero of=/dev/sda',
+        'dd if=/dev/zero of="/dev/sda"',
+        "dd if=/dev/zero of='/dev/sda'",
+        'dd of=/dev/sda if=/dev/zero'
+    ];
+    const mustAllow = [
+        'rm -rf /tmp/build',
+        'rm --recursive --force /tmp/build',
+        'dd if=/dev/zero of=/tmp/disk.img'
+    ];
+    const classified = classifySafeMode(mustBlock.concat(mustAllow));
+    mustBlock.forEach((command, index) => {
+        assert(classified[index] === true, 'SAFE_MODE blocks ' + JSON.stringify(command));
+    });
+    mustAllow.forEach((command, index) => {
+        assert(classified[mustBlock.length + index] === false, 'SAFE_MODE allows ' + JSON.stringify(command));
+    });
 })().catch((err) => {
     console.error(err.stack || err.message);
     process.exit(1);
