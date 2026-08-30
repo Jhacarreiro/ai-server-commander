@@ -8,13 +8,38 @@ const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 
 const tokenStorePath = path.join(__dirname, "../tokenStore.json");
+// Default 8 MiB matches the fail-closed contract landed in #8; env-tunable for tests.
+const MAX_ACCESS_FILE_BYTES = Math.max(
+    1024,
+    Number.parseInt(process.env.MAX_ACCESS_FILE_BYTES || String(8 * 1024 * 1024), 10) || (8 * 1024 * 1024)
+);
+const MAX_TOKEN_STORE_ENTRIES = Math.max(
+    16,
+    Number.parseInt(process.env.MAX_TOKEN_STORE_ENTRIES || "500", 10) || 500
+);
 
 // Function to read the token store
 const readTokenStore = () => {
-    if (fs.existsSync(tokenStorePath)) {
-        return JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+    if (!fs.existsSync(tokenStorePath)) return {};
+    try {
+        const parsed = JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+        const normalized = {};
+        for (const [key, value] of Object.entries(parsed)) {
+            if (
+                value &&
+                typeof value === "object" &&
+                typeof value.filePath === "string" &&
+                !Number.isNaN(new Date(value.expiryDate).getTime())
+            ) {
+                normalized[key] = value;
+            }
+        }
+        return normalized;
+    } catch (err) {
+        log("tokenStore.json unreadable; starting empty store:", err && err.message ? err.message : err);
+        return {};
     }
-    return {};
 };
 
 // Function to write to the token store
@@ -32,6 +57,8 @@ const writeToTokenStore = (tokenStore) => {
     try {
         fs.writeFileSync(tmpPath, payload, { encoding: "utf8", mode: 0o600 });
         try { fs.chmodSync(tmpPath, 0o600); } catch (_) {}
+        const fd = fs.openSync(tmpPath, "r+");
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
         fs.renameSync(tmpPath, tokenStorePath);
         try { fs.chmodSync(tokenStorePath, 0o600); } catch (_) {}
     } finally {
@@ -69,6 +96,15 @@ module.exports.createToken = (getURL, filePath) => {
         }
     });
 
+    // Cap store growth (oldest expiry first) so tokenStore.json cannot grow without bound.
+    const entries = Object.entries(tokenStore);
+    if (entries.length > MAX_TOKEN_STORE_ENTRIES) {
+        entries
+            .sort((a, b) => new Date(a[1].expiryDate) - new Date(b[1].expiryDate))
+            .slice(0, entries.length - MAX_TOKEN_STORE_ENTRIES)
+            .forEach(([tok]) => { delete tokenStore[tok]; });
+    }
+
     writeToTokenStore(tokenStore);
 
     const serverUrl = getURL(); // Gets the base server URL
@@ -91,6 +127,19 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     if (req.query.diff) {
+        // Fail-closed on oversized existing regular files before git work.
+        // ENOENT is allowed so #8 can still diff a tracked deletion.
+        try {
+            const earlyStat = fs.lstatSync(tokenInfo.filePath);
+            if (earlyStat.isFile() && earlyStat.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(500).send('Error fetching Git diff: Target file is too large to diff safely.');
+            }
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
+                console.error(err);
+                return res.status(500).send('Failed to read the file.');
+            }
+        }
         try {
             // Treat the target repository as data, not executable configuration.
             // Git plumbing only locates/reads the stage-0 blob. The actual comparison
@@ -146,7 +195,7 @@ module.exports.retrieveFile = async (req, res) => {
                     { ...gitOptions, cwd: repoRoot }
                 );
                 const indexSize = Number.parseInt(indexSizeOutput.trim(), 10);
-                if (!Number.isSafeInteger(indexSize) || indexSize < 0 || indexSize > 8 * 1024 * 1024) {
+                if (!Number.isSafeInteger(indexSize) || indexSize < 0 || indexSize > MAX_ACCESS_FILE_BYTES) {
                     throw new Error('Target file is too large to diff safely.');
                 }
                 const { stdout: indexBlob } = await execFileAsync(
@@ -172,7 +221,7 @@ module.exports.retrieveFile = async (req, res) => {
                         if (!currentStat.isFile()) {
                             throw new Error('Target path is not a regular file or symlink.');
                         }
-                        if (currentStat.size > 8 * 1024 * 1024) {
+                        if (currentStat.size > MAX_ACCESS_FILE_BYTES) {
                             throw new Error('Target file is too large to diff safely.');
                         }
                         currentBlob = fs.readFileSync(tokenInfo.filePath);
@@ -180,7 +229,7 @@ module.exports.retrieveFile = async (req, res) => {
                     }
                 }
 
-                if (currentBlob.length > 8 * 1024 * 1024) {
+                if (currentBlob.length > MAX_ACCESS_FILE_BYTES) {
                     throw new Error('Target file is too large to diff safely.');
                 }
 
@@ -286,13 +335,26 @@ module.exports.retrieveFile = async (req, res) => {
             res.status(500).send('Error fetching Git diff: ' + error.message);
         }
     } else {
-        fs.readFile(tokenInfo.filePath, 'utf8', (err, data) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Failed to read the file.');
+        let fd;
+        try {
+            fd = fs.openSync(tokenInfo.filePath, 'r');
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        try {
+            const rst = fs.fstatSync(fd);
+            if (!rst.isFile()) {
+                return res.status(400).send('Token target is not a regular file.');
             }
+            if (rst.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
+            }
+            const data = fs.readFileSync(fd, 'utf8');
             res.setHeader('Content-Type', 'text/plain');
             res.send(data);
-        });
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 };
