@@ -1,5 +1,14 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { executeBounded, parseRequest } = require('../api/terminal');
-const { getActiveCommandIds, interruptCommand } = require('../serverModules/commandExecutor');
+const {
+    getActiveCommandIds,
+    interruptCommand,
+    terminateAll,
+    TERMINATE_ALL_ESCALATE_MS
+} = require('../serverModules/commandExecutor');
+const exitApplicationHandler = require('../api/exitApplicationHandler');
 
 function assert(cond, label, details = '') {
     if (!cond) throw new Error(label + (details ? ': ' + details : ''));
@@ -7,6 +16,22 @@ function assert(cond, label, details = '') {
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function pidAlive(pid) {
+    if (!pid) return false;
+    try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+function readPid(file) {
+    try { return parseInt(fs.readFileSync(file, 'utf8').trim(), 10); } catch { return 0; }
+}
+
+function withDeadline(promise, ms, label) {
+    return Promise.race([
+        promise,
+        delay(ms).then(() => { throw new Error(label + ' exceeded ' + ms + 'ms'); })
+    ]);
+}
 
 (async () => {
     assert(typeof executeBounded === 'function', 'executeBounded export exists');
@@ -73,6 +98,49 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     assert(interruptCommand('test_second').interrupted, 'interrupt second command by id');
     const [firstResult, secondResult] = await Promise.all([first, second]);
     assert(firstResult.interrupted && secondResult.interrupted, 'interruption state preserved per command');
+
+    assert(typeof terminateAll === 'function', 'terminateAll export exists');
+    assert(
+        exitApplicationHandler.RESTART_EXIT_DELAY_MS >
+            exitApplicationHandler.RESTART_CLOSE_DELAY_MS + TERMINATE_ALL_ESCALATE_MS,
+        'hard exit is after SIGKILL grace',
+        JSON.stringify({
+            close: exitApplicationHandler.RESTART_CLOSE_DELAY_MS,
+            grace: TERMINATE_ALL_ESCALATE_MS,
+            exit: exitApplicationHandler.RESTART_EXIT_DELAY_MS
+        })
+    );
+
+    const trapPidFile = path.join(os.tmpdir(), 'asc-restart-trap-' + process.pid + '.pid');
+    try { fs.unlinkSync(trapPidFile); } catch { /* ignore */ }
+    let trapPid = 0;
+    try {
+        const trapStarted = Date.now();
+        const trapPromise = executeBounded({
+            activityId: 'test_restart_trap',
+            command: 'trap "" TERM; echo $$ > "' + trapPidFile + '"; while true; do sleep 1; done',
+            cwd: process.cwd(),
+            timeoutMs: 20000,
+            shell: '/bin/sh'
+        });
+        for (let i = 0; i < 20 && !trapPid; i++) {
+            await delay(50);
+            trapPid = readPid(trapPidFile);
+        }
+        assert(trapPid > 0 && pidAlive(trapPid), 'trapped SIGTERM command started', String(trapPid));
+        terminateAll();
+        await withDeadline(trapPromise, TERMINATE_ALL_ESCALATE_MS + 1500, 'terminateAll escalation');
+        const trapElapsed = Date.now() - trapStarted;
+        await delay(100);
+        assert(trapElapsed < TERMINATE_ALL_ESCALATE_MS + 1500, 'terminateAll escalates to SIGKILL', String(trapElapsed));
+        assert(!pidAlive(trapPid), 'terminateAll leaves no trapped-SIGTERM survivor', String(trapPid));
+        assert(getActiveCommandIds().indexOf('test_restart_trap') === -1, 'terminateAll clears tracking');
+    } finally {
+        if (trapPid) {
+            try { process.kill(trapPid, 'SIGKILL'); } catch { /* already gone */ }
+        }
+        try { fs.unlinkSync(trapPidFile); } catch { /* ignore */ }
+    }
 })().catch((err) => {
     console.error(err.stack || err.message);
     process.exit(1);
