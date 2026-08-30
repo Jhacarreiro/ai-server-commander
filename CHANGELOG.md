@@ -11,10 +11,20 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
+- The listen address is now taken from required `host` in `config.json`. Configurations that omit `host` fail with migration guidance instead of binding all interfaces. New setup writes `host: "127.0.0.1"`.
+- Documented the hostless-config upgrade path in the README and deployment guide.
 
 ### Added
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
+
+### Fixed
+
+- Startup listen URLs wrap IPv6 literals so `::1` logs as `http://[::1]:3000`.
+
+### Tests
+
+- Added host-required, IPv6 listen-URL and live bind/request coverage.
 
 ## [1.0.8] - 2026-07-12
 

@@ -15,6 +15,7 @@ function writeTestConfig() {
     if (fs.existsSync(configPath)) fs.copyFileSync(configPath, backupPath);
     fs.writeFileSync(configPath, JSON.stringify({
         port,
+        host: '127.0.0.1',
         useLocalTunnel: false,
         productionDomain: `http://localhost:${port}`,
         authToken: token,
