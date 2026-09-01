@@ -138,11 +138,12 @@ function withDeadline(promise, ms, label) {
     });
     await delay(200);
     assert(interruptCommand('test_repeat_int').interrupted, 'first interrupt of trap command');
+    await delay(800);
     assert(interruptCommand('test_repeat_int').interrupted, 'second interrupt does not fail');
     const rpt = await withDeadline(rptPromise, 8000, 'repeat interrupt');
     const rptElapsed = Date.now() - rptStarted;
     assert(rpt.interrupted, 'repeat interrupt still completes', JSON.stringify(rpt));
-    assert(rptElapsed < 4000, 'single grace window despite repeated interrupts', String(rptElapsed));
+    assert(rptElapsed < 2500, 'second interrupt does not restart the SIGKILL grace window', String(rptElapsed));
     assert(getActiveCommandIds().indexOf('test_repeat_int') === -1, 'repeat interrupt clears tracking');
     await delay(100);
     const rptPid = readPid(rptPidFile);

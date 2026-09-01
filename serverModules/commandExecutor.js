@@ -121,12 +121,12 @@ function clearKillTimer(entry) {
 // escalation. Wait briefly, then SIGKILL the group.
 function escalateToKill(entry, graceMs = 1500) {
     if (!entry || !entry.child || !entry.child.pid) return;
+    // A second interrupt must not restart the grace window; that would
+    // let a caller delay SIGKILL indefinitely.
+    if (entry.killTimer) return;
     const pid = entry.child.pid;
     const child = entry.child;
 
-    // Own a single handle so completion can cancel it and a second
-    // interrupt cannot queue another SIGKILL.
-    clearKillTimer(entry);
     entry.killTimer = setTimeout(() => {
         entry.killTimer = null;
         if (!processGroupAlive(pid, child)) return;
