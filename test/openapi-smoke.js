@@ -54,6 +54,9 @@ function assert(cond, label, details='') { if (!cond) throw new Error(label + (d
     assert(spec.components && spec.components.schemas && spec.components.schemas.CommandResponse, 'OpenAPI has command schemas');
     const responseProperties = spec.components.schemas.CommandResponse.properties;
     assert(responseProperties.activityId && responseProperties.interrupted, 'OpenAPI has activity and interruption fields');
+    const scriptSchema = spec.components.schemas.ScriptRequest;
+    assert(scriptSchema && Array.isArray(scriptSchema.required) && scriptSchema.required.includes('script') && !scriptSchema.required.includes('mode'), 'OpenAPI ScriptRequest requires script but not mode');
+    assert(scriptSchema.properties.mode && scriptSchema.properties.mode.default === 'script', 'OpenAPI ScriptRequest mode defaults to script');
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
