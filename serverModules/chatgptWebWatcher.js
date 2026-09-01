@@ -122,17 +122,54 @@ function publicStatus(settings, state) {
     };
 }
 
+async function readAuthenticatedSession(page) {
+    const tree = await page.cdp('Page.getFrameTree');
+    const frameId = tree?.frameTree?.frame?.id;
+    if (!frameId) throw new Error('ChatGPT main frame unavailable for auth probe.');
+
+    const loaded = await page.cdp('Network.loadNetworkResource', {
+        frameId,
+        url: 'https://chatgpt.com/api/auth/session',
+        options: { disableCache: true, includeCredentials: true }
+    });
+    const resource = loaded?.resource || {};
+    let text = '';
+    const maxBytes = 256 * 1024;
+    if (resource.stream) {
+        try {
+            while (text.length <= maxBytes) {
+                const chunk = await page.cdp('IO.read', { handle: resource.stream });
+                const data = chunk?.base64Encoded
+                    ? Buffer.from(String(chunk.data || ''), 'base64').toString('utf8')
+                    : String(chunk?.data || '');
+                text += data;
+                if (chunk?.eof) break;
+            }
+        } finally {
+            await page.cdp('IO.close', { handle: resource.stream }).catch(() => {});
+        }
+    }
+    if (text.length > maxBytes) throw new Error('ChatGPT auth response exceeded safe size limit.');
+
+    let body = null;
+    try { body = JSON.parse(text); } catch {}
+    return {
+        authenticated: Boolean(
+            resource.success === true &&
+            resource.httpStatusCode === 200 &&
+            body && typeof body === 'object' && Object.keys(body).length > 0
+        ),
+        authStatus: Number(resource.httpStatusCode || 0)
+    };
+}
+
 async function readSnapshot(settings) {
     const { CDPBridge } = await import('@jackwener/opencli/browser/cdp');
     const bridge = new CDPBridge();
     const page = await bridge.connect({ cdpEndpoint: settings.cdpEndpoint, timeout: 10 });
     try {
-        return await page.evaluate(`(async () => {
-            const session = await fetch('/api/auth/session', { credentials: 'include' })
-                .then(async r => ({ ok: r.ok, status: r.status, body: r.ok ? await r.json().catch(() => null) : null }))
-                .catch(() => ({ ok: false, status: 0, body: null }));
-            const body = session.body;
-            const authenticated = Boolean(session.ok && body && typeof body === 'object' && Object.keys(body).length > 0);
+        const session = await readAuthenticatedSession(page);
+        const dom = await page.evaluate(`(() => {
             const nodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
             const latest = nodes.length ? nodes[nodes.length - 1] : null;
             const assistantText = latest ? (latest.innerText || latest.textContent || '').trim() : '';
@@ -147,8 +184,9 @@ async function readSnapshot(settings) {
                 const label = [button.getAttribute('aria-label'), button.getAttribute('title'), button.innerText, button.textContent].filter(Boolean).join(' ');
                 return /stop generating|stop streaming/i.test(label);
             });
-            return { url: location.href, authenticated, authStatus: session.status, assistantText, assistantCount: nodes.length, generating };
+            return { url: location.href, assistantText, assistantCount: nodes.length, generating };
         })()`);
+        return { ...dom, ...session };
     } finally {
         await bridge.close();
     }
