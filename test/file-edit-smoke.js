@@ -58,6 +58,23 @@ function assert(cond, label, details = '') {
     }
     assert(mixedThrew, 'parseConflicts throws on mixed valid+malformed payload');
 
+    const unterminated = [
+        wellFormed,
+        '<<<<<<< HEAD',
+        'old leftover',
+        '=======',
+        'new leftover'
+    ].join('\n');
+    let unterminatedThrew = false;
+    try {
+        parseConflicts(unterminated);
+    } catch (err) {
+        unterminatedThrew = true;
+        const message = err && err.message ? err.message : String(err);
+        assert(/Malformed conflict|>>>>>>>/i.test(message), 'unterminated mixed payload error mentions closing marker', message);
+    }
+    assert(unterminatedThrew, 'parseConflicts throws on mixed valid+unterminated payload');
+
     const originalFile = 'alpha beta gamma';
     const nullResult = await applyReplacements(originalFile, [{ originalText: 'beta', replacementText: null }]);
     assert(nullResult.updatedContent === originalFile, 'null replacementText leaves fileContent unchanged', JSON.stringify(nullResult));
@@ -78,6 +95,23 @@ function assert(cond, label, details = '') {
     const deleteResult = await applyReplacements(originalFile, [{ originalText: 'beta ', replacementText: '' }]);
     assert(deleteResult.updatedContent === 'alpha gamma', 'empty replacementText deletes matched text', JSON.stringify(deleteResult));
     assert(deleteResult.unsuccessfulReplacements.length === 0, 'empty replacementText has no unsuccessful entries', JSON.stringify(deleteResult.unsuccessfulReplacements));
+
+    const mixedEmptyOriginal = await applyReplacements(originalFile, [
+        { originalText: 'beta', replacementText: 'BETA' },
+        { originalText: '', replacementText: 'nope' }
+    ]);
+    assert(mixedEmptyOriginal.updatedContent === originalFile, 'valid-then-empty originalText leaves fileContent unchanged', JSON.stringify(mixedEmptyOriginal));
+    assert(
+        mixedEmptyOriginal.unsuccessfulReplacements.some((msg) => String(msg).includes('originalText')),
+        'valid-then-empty originalText records originalText unsuccessful message',
+        JSON.stringify(mixedEmptyOriginal.unsuccessfulReplacements)
+    );
+
+    const mixedNullOriginal = await applyReplacements(originalFile, [
+        { originalText: 'beta', replacementText: 'BETA' },
+        { originalText: null, replacementText: 'nope' }
+    ]);
+    assert(mixedNullOriginal.updatedContent === originalFile, 'valid-then-null originalText leaves fileContent unchanged', JSON.stringify(mixedNullOriginal));
 
     const happy = await applyReplacements(originalFile, [{ originalText: 'beta', replacementText: 'BETA' }]);
     assert(happy.updatedContent === 'alpha BETA gamma', 'happy path replaces the single occurrence', JSON.stringify(happy));
