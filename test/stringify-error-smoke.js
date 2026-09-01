@@ -95,6 +95,16 @@ payload = payloadFromError(`stat ${posixPlain} failed`);
 assertNoStack(payload, 'posix path without spaces');
 assertPathRedacted(payload, ['/home/user', 'project/file.js'], 'posix path without spaces');
 
+const posixComma = '/srv/build,private/release.js';
+payload = payloadFromError(`ENOENT: no such file or directory, open '${posixComma}'`, { code: 'ENOENT' });
+assertNoStack(payload, 'posix path with comma');
+assertPathRedacted(payload, ['/srv/', 'build,private', 'release.js'], 'posix path with comma');
+
+const posixColon = '/srv/build:private/release.js';
+payload = payloadFromError(`ENOENT: no such file or directory, open '${posixColon}'`, { code: 'ENOENT' });
+assertNoStack(payload, 'posix path with colon');
+assertPathRedacted(payload, ['/srv/', 'build:private', 'release.js'], 'posix path with colon');
+
 const long = new Error('x'.repeat(400));
 const truncated = JSON.parse(stringifyError(long));
 assert(truncated.message.length === 300, 'message is capped at 300 characters', String(truncated.message.length));
@@ -145,6 +155,13 @@ console.log = () => {};
             'logged diagnostic does not include the stack', String(failedEntry[1]));
         assert(!serializedLogsSince(beforeSpaced).includes('readEditTextFile2Handler.js'),
             'shared log buffer does not contain handler stack frames', serializedLogsSince(beforeSpaced));
+        const newEntries = getLog().slice(beforeSpaced);
+        for (const args of newEntries) {
+            const list = Array.isArray(args) ? args : [args];
+            for (const arg of list) {
+                assert(!(arg instanceof Error), 'shared log entries contain no Error instances');
+            }
+        }
     } finally {
         console.error = originalConsoleError;
         console.log = originalConsoleLog;
