@@ -76,7 +76,7 @@ npm install
 
 ### 2. Create configuration
 
-The first `npm start` launches an interactive setup and writes `config.json`.
+The first `npm start` launches an interactive setup and writes `config.json`. Invalid port or public-origin answers print an error and the prompts repeat until the values validate. Ctrl-D or EOF cancels setup without writing a file.
 
 ```bash
 npm start
@@ -132,7 +132,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 
 | Key | Required | Purpose |
 |---|---:|---|
-| `port` | Yes | Local TCP port used by the Node server. |
+| `port` | Yes | Local TCP port. Must be a whole decimal integer from 1 to 65535. Digit strings, including zero-padded values such as `"00001"` or `"09999"`, are accepted and stored as the numeric port. Malformed values such as `"3000abc"`, `"1e3"` and floats are rejected. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
@@ -379,13 +379,17 @@ The smoke suite covers:
 - concurrency and targeted interruption;
 - MCP initialization, advertised protocol version, empty-batch rejection and execution;
 - OAuth metadata, PKCE, persistent state, restart continuity, refresh rotation and revocation;
-- native setup and Firestore service-account compatibility;
+- native setup, first-run retry/cancellation, and Firestore service-account compatibility;
 - `SAFE_MODE` results;
 - OpenAPI generation and version alignment.
 
 CI runs checks on supported Node versions for every push and pull request.
 
 ## Troubleshooting
+
+### First-run setup rejects the port or origin
+
+The interactive wizard re-prompts until the listen port is a whole decimal integer from 1 to 65535 and the public origin is an HTTP(S) URL. Values such as `3000abc`, `1e3`, or an empty origin are rejected instead of crashing the process. Press Ctrl-D (or send EOF) to cancel without writing `config.json`.
 
 ### Public URLs use `http://` or the wrong hostname
 
