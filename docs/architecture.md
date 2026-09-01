@@ -85,8 +85,10 @@ MVP1 is intentionally read-only. Sending messages or performing account-changing
 | `api/activityLog.js` | Redacted activity records and context. |
 | `api/notices.js` | Scoped operational notices. |
 | `serverModules/swaggerSetup.js` | OpenAPI generation. |
+| `serverModules/chatgptWebWatcher.js` | Disabled-by-default read-only ChatGPT Web snapshot, stability and dedup state. |
+| `api/chatgptWeb.js` | REST handlers for watcher status, latest response and explicit polling. |
 
-Planned browser/session modules should live behind a dedicated adapter boundary rather than importing site-specific selectors into the command executor or protocol adapters.
+Browser/session code lives behind a dedicated adapter boundary rather than importing site-specific selectors into the command executor or protocol adapters. MVP1 uses OpenCLI CDP plumbing and keeps ChatGPT-specific observation in `chatgptWebWatcher.js`.
 
 ## Execution lifecycle
 

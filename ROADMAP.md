@@ -32,7 +32,7 @@ This keeps the command executor independently useful while allowing additional c
 
 ### Authenticated web-conversation watcher — MVP1
 
-Build the first browser/session capability as a deliberately read-only MVP. The initial target is an explicitly selected AI web conversation running in an operator-authenticated, persistent headful browser profile.
+MVP1 is implemented as a deliberately read-only, disabled-by-default browser/session capability. The initial target is an explicitly selected AI web conversation running in an operator-authenticated, persistent headful browser profile.
 
 MVP1 should:
 
@@ -42,7 +42,7 @@ MVP1 should:
 - distinguish at least `idle`, `generating`, `completed` and `needs_human` states;
 - detect a new completed response exactly once through durable deduplication state;
 - return the completed response and minimal conversation metadata through a typed API;
-- expose status/latest/watch operations without requiring an LLM in the polling loop;
+- expose status/latest/pending/ack operations without requiring an LLM in the polling loop;
 - keep watcher state local and exclude browser profiles, cookies and conversation data from Git;
 - fail safely when login, CAPTCHA, consent or unexpected UI changes require human takeover;
 - remain read-only: MVP1 must not submit messages, click confirmation dialogs or perform account-changing actions.

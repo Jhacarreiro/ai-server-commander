@@ -2,5 +2,14 @@
   "port": 3000,
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-with-a-long-random-secret",
-  "mcpToken": "replace-with-a-separate-long-random-secret"
+  "mcpToken": "replace-with-a-separate-long-random-secret",
+  "chatgptWeb": {
+    "enabled": false,
+    "cdpEndpoint": "http://127.0.0.1:9223",
+    "conversationUrl": null,
+    "stableMs": 4000,
+    "pollMs": 5000,
+    "statePath": "runtime/chatgpt-web-state.json",
+    "emitInitial": false
+  }
 }

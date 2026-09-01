@@ -11,8 +11,8 @@
     "test:routes": "node test/routes-smoke.js",
     "test:openapi": "node test/openapi-smoke.js",
     "test:executor": "node test/executor-smoke.js",
-    "test:all": "npm run test:executor && npm run test:setup && npm run test:firebase && npm run test:routes && npm run test:mcp && npm run test:oauth && npm run test:openapi && npm run test:cors && npm run test:docs && npm run test:tokenstore && npm run test:file-access-diff",
-    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check api/oauth.js && node --check serverModules/auth.js && node --check serverModules/configHandler.js && node --check serverModules/firebaseDB.js && node --check serverModules/oauthStore.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js",
+    "test:all": "npm run test:executor && npm run test:setup && npm run test:firebase && npm run test:chatgpt-web && npm run test:routes && npm run test:mcp && npm run test:oauth && npm run test:openapi && npm run test:cors && npm run test:docs && npm run test:tokenstore && npm run test:file-access-diff",
+    "check": "node --check main.js && node --check api/terminal.js && node --check api/mcp.js && node --check api/oauth.js && node --check serverModules/auth.js && node --check serverModules/configHandler.js && node --check serverModules/firebaseDB.js && node --check serverModules/oauthStore.js && node --check serverModules/commandExecutor.js && node --check serverModules/apiRoutes.js && node --check serverModules/pluginServer.js && node --check serverModules/swaggerSetup.js && node --check api/chatgptWeb.js && node --check serverModules/chatgptWebWatcher.js",
     "test:mcp": "node test/mcp-smoke.js",
     "test:docs": "node test/docs-smoke.js",
     "test:setup": "node test/setup-smoke.js",
@@ -20,7 +20,8 @@
     "test:oauth": "node test/oauth-persistence-smoke.js",
     "test:cors": "node test/cors-preflight-smoke.js",
     "test:tokenstore": "node test/token-store-permissions.js",
-    "test:file-access-diff": "node test/file-access-diff.js"
+    "test:file-access-diff": "node test/file-access-diff.js",
+    "test:chatgpt-web": "node test/chatgpt-web-smoke.js"
   },
   "keywords": [
     "mcp",
@@ -36,6 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "@google-cloud/firestore": "8.7.1",
+    "@jackwener/opencli": "1.8.7",
     "diff": "^5.2.2",
     "espree": "^10.4.0",
     "express": "^4.22.2",

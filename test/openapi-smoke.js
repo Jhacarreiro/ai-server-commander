@@ -51,6 +51,11 @@ function assert(cond, label, details='') { if (!cond) throw new Error(label + (d
     assert(spec.info.version === packageVersion, 'OpenAPI version matches package', spec.info.version);
     assert(paths['/api/runTerminalScript'] && paths['/api/runTerminalScript'].get && paths['/api/runTerminalScript'].post, 'OpenAPI has GET/POST /api/runTerminalScript');
     assert(paths['/v1/commands/execute'] && paths['/v1/commands/execute'].post, 'OpenAPI has POST /v1/commands/execute');
+    assert(paths['/api/chatgpt-web/status'] && paths['/api/chatgpt-web/status'].get, 'OpenAPI has GET /api/chatgpt-web/status');
+    assert(paths['/api/chatgpt-web/latest'] && paths['/api/chatgpt-web/latest'].get, 'OpenAPI has GET /api/chatgpt-web/latest');
+    assert(paths['/api/chatgpt-web/pending'] && paths['/api/chatgpt-web/pending'].get, 'OpenAPI has GET /api/chatgpt-web/pending');
+    assert(paths['/api/chatgpt-web/ack'] && paths['/api/chatgpt-web/ack'].post, 'OpenAPI has POST /api/chatgpt-web/ack');
+    assert(paths['/api/chatgpt-web/poll'] && paths['/api/chatgpt-web/poll'].post, 'OpenAPI has POST /api/chatgpt-web/poll');
     assert(spec.components && spec.components.schemas && spec.components.schemas.CommandResponse, 'OpenAPI has command schemas');
     const responseProperties = spec.components.schemas.CommandResponse.properties;
     assert(responseProperties.activityId && responseProperties.interrupted, 'OpenAPI has activity and interruption fields');
