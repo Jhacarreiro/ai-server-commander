@@ -41,6 +41,8 @@ Deployments should:
 
 OAuth client secrets, authorization codes, access tokens and refresh tokens are stored only as SHA-256 hashes. The state file also contains non-secret client metadata and expiry/resource/scope records. Protect the parent directory, back up the file only when continuity is required, and treat deletion as an authorization reset.
 
+Persist re-reads the current on-disk file under an exclusive sibling lock directory before rewriting it. Local deletions (revocation, refresh rotation, consumed authorization codes, and expiry pruning) win over a stale in-memory snapshot, and a failed or malformed state read still fails closed instead of replacing the file with cached memory. Prefer a single writer process per `OAUTH_STATE_PATH`.
+
 The server rejects malformed or symlinked OAuth state files rather than silently starting with an empty authorization database.
 
 ## Dependency findings

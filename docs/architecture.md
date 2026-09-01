@@ -81,7 +81,7 @@ MVP1 is intentionally read-only. Sending messages or performing account-changing
 | `api/terminal.js` | Shared request parsing and command result shaping. |
 | `api/mcp.js` | MCP JSON-RPC adapter and tool descriptor. |
 | `api/oauth.js` | OAuth metadata, registration, consent, token rotation and revocation endpoints. |
-| `serverModules/oauthStore.js` | Atomic persistent OAuth state with hashed secrets and tokens. |
+| `serverModules/oauthStore.js` | Atomic persistent OAuth state with hashed secrets and tokens, and a lock-merged multi-writer persist protocol. |
 | `api/activityLog.js` | Redacted activity records and context. |
 | `api/notices.js` | Scoped operational notices. |
 | `serverModules/swaggerSetup.js` | OpenAPI generation. |
@@ -123,7 +123,7 @@ Persistent application state is intentionally small:
 
 Optional adapters may add narrowly scoped runtime state, for example response fingerprints or watch subscriptions. Sensitive browser profile data, cookies, account credentials and private conversation archives are not repository content and should remain in operator-controlled runtime storage.
 
-OAuth mutations use an atomic temporary-file-and-rename sequence. The state file is mode `600`; raw client secrets and token values are never written to disk. A malformed or symlinked OAuth state file fails closed at startup. Refresh tokens rotate on use and both access and refresh tokens can be explicitly revoked.
+OAuth mutations use an atomic temporary-file-and-rename sequence. Writers serialize through a sibling `${OAUTH_STATE_PATH}.lock` directory. While the lock is held, persist re-reads the on-disk file, applies this process's local writes and deletions, then replaces the file. Keys this process never mutated take the on-disk value, so another instance's revocations, consumed authorization codes, rotated refresh tokens, and newly issued credentials are kept. Reads re-apply that same merge so a second process sees those changes without waiting for its own persist. A malformed or symlinked OAuth state file fails closed on load and persist rather than being overwritten with cached memory. Prefer one writer process per state file; multiple writers are supported only through that lock-and-merge path. The state file is mode `600`; raw client secrets and token values are never written to disk. Refresh tokens rotate on use and both access and refresh tokens can be explicitly revoked.
 
 ## Extension rule
 
