@@ -125,6 +125,20 @@ async function edit(filePath, replacements) {
         assert(existingFail.statusCode === 400, 'failed edit of existing file is HTTP 400', String(existingFail.statusCode));
         assert(fs.readFileSync(existing, 'utf8') === 'keep-this\n', 'failed edit leaves the existing file unchanged');
 
+        const mixedNonString = path.join(scratch, 'mixed-nonstring.txt');
+        const mixedRes = await edit(mixedNonString, [
+            { originalText: '', replacementText: 'created\n' },
+            { originalText: 123, replacementText: 'nope' }
+        ]);
+        assert(mixedRes.statusCode === 400, 'non-string originalText in a create batch is HTTP 400', String(mixedRes.statusCode));
+        assert(!fs.existsSync(mixedNonString), 'non-string originalText does not create a file');
+
+        const existingNonString = await edit(existing, [
+            { originalText: 0, replacementText: 'nope' }
+        ]);
+        assert(existingNonString.statusCode === 400, 'non-string originalText on existing file is HTTP 400', String(existingNonString.statusCode));
+        assert(fs.readFileSync(existing, 'utf8') === 'keep-this\n', 'non-string originalText leaves the existing file unchanged');
+
         const existingOk = await edit(existing, [
             { originalText: 'keep-this', replacementText: 'changed' }
         ]);

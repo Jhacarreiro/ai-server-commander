@@ -30,6 +30,16 @@ const missingFileClientError = () => {
 const allowsMissingFileCreate = ( replacements ) =>
     ( replacements || [] ).some( ( r ) => r && r.originalText === '' );
 
+const assertStringOriginalTexts = ( replacements ) => {
+    for ( const r of replacements || [] ) {
+        if ( r && Object.prototype.hasOwnProperty.call( r, 'originalText' ) && typeof r.originalText !== 'string' ) {
+            const error = new Error( 'Search text (originalText) must be a string.' );
+            error.status = 400;
+            throw error;
+        }
+    }
+};
+
 const revertFileToOriginal = async ( filePath, replaceResult ) => {
     if ( replaceResult.created ) {
         try {
@@ -46,6 +56,8 @@ const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
     let created = false;
+
+    assertStringOriginalTexts( replacements );
 
     // Missing paths may only be created by a replacement whose originalText
     // is a literal empty string. Open existing files with 'r' (not 'a+')
@@ -246,6 +258,15 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         }
         res.type( 'text/plain' ).send( responseMessage );
     } catch ( error ) {
+        if ( replaceResult && replaceResult.created ) {
+            try {
+                await fs.promises.unlink( filePath );
+            } catch ( err ) {
+                if ( !err || err.code !== 'ENOENT' ) {
+                    console.error( err );
+                }
+            }
+        }
         console.error( error );
         const logData = {
             error: error.message,
