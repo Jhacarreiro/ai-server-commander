@@ -52,12 +52,18 @@ function clearKillTimer(entry) {
 // SIGTERM is not enough for children that trap or ignore it. Own a single
 // timer so completion can cancel it and a second call cannot stack SIGKILLs.
 function escalateToKill(entry, graceMs = 1500) {
-    if (!entry || !entry.child || !entry.child.pid) return;
+    if (!entry || !entry.child || !entry.child.pid) return Promise.resolve();
     clearKillTimer(entry);
-    entry.killTimer = setTimeout(() => {
-        entry.killTimer = null;
-        terminateEntry(entry, 'SIGKILL');
-    }, positiveInteger(graceMs, 1500));
+    return new Promise((resolve) => {
+        entry.killTimer = setTimeout(() => {
+            entry.killTimer = null;
+            try {
+                terminateEntry(entry, 'SIGKILL');
+            } finally {
+                resolve();
+            }
+        }, positiveInteger(graceMs, 1500));
+    });
 }
 
 function sanitizeCwd(raw) {
@@ -180,10 +186,12 @@ const TERMINATE_ALL_ESCALATE_MS = 800;
 // process.exit() and keep running unmanaged.
 function terminateAll() {
     const entries = Array.from(activeProcesses.values());
+    const waits = [];
     for (const entry of entries) {
         terminateEntry(entry);
-        escalateToKill(entry, TERMINATE_ALL_ESCALATE_MS);
+        waits.push(escalateToKill(entry, TERMINATE_ALL_ESCALATE_MS));
     }
+    return Promise.all(waits);
 }
 
 module.exports = {
