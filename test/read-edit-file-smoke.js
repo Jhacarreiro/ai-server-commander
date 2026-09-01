@@ -44,6 +44,40 @@ const { replaceTextInSection } = require('../api/readEditTextFile2Handler');
         fs.promises.open = realOpen;
         assert.strictEqual(fs.readFileSync(filePath, 'utf8'), 'original content\n', 'file untouched after failed open');
         console.log('PASS failed open propagates and leaves the file untouched');
+
+        fs.writeFileSync(filePath, 'original content\n', 'utf8');
+        await replaceTextInSection(filePath, [{ originalText: 'original content\n', replacementText: 'x' }]);
+        const exact = fs.readFileSync(filePath);
+        assert.strictEqual(exact.toString('utf8'), 'x', 'shorter replacement writes exact content');
+        assert.ok(!exact.includes(0), 'shorter replacement does not leave NUL padding');
+        console.log('PASS shorter replacement writes exact content without NUL padding');
+
+        fs.writeFileSync(filePath, 'original content\n', 'utf8');
+        let openWrap = fs.promises.open;
+        fs.promises.open = async (...args) => {
+            const handle = await openWrap(...args);
+            fs.promises.open = openWrap;
+            fs.unlinkSync(filePath);
+            return handle;
+        };
+        await replaceTextInSection(filePath, [{ originalText: 'original content', replacementText: 'replaced' }]);
+        fs.promises.open = openWrap;
+        assert.strictEqual(fs.existsSync(filePath), false, 'unlinked path is not recreated by the handle write');
+        console.log('PASS deletion after open does not recreate the path');
+
+        fs.writeFileSync(filePath, 'original content\n', 'utf8');
+        openWrap = fs.promises.open;
+        fs.promises.open = async (...args) => {
+            const handle = await openWrap(...args);
+            fs.promises.open = openWrap;
+            fs.unlinkSync(filePath);
+            fs.writeFileSync(filePath, 'DECOY\n', 'utf8');
+            return handle;
+        };
+        await replaceTextInSection(filePath, [{ originalText: 'original content', replacementText: 'replaced' }]);
+        fs.promises.open = openWrap;
+        assert.strictEqual(fs.readFileSync(filePath, 'utf8'), 'DECOY\n', 'replaced path is not overwritten');
+        console.log('PASS path replacement after open leaves the decoy file intact');
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }

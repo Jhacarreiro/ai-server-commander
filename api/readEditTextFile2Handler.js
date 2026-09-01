@@ -33,11 +33,12 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         fileHandle = await fs.promises.open( filePath, 'r+' ); // read-write; never creates files
         const fileContent = await fileHandle.readFile( 'utf8' );
         const result = await mergeText( fileContent, replacements );
-        // Keep the same descriptor for the write: truncate + write at 0 so a
-        // concurrent delete/replace of the pathname cannot redirect the write
-        // to a different inode. writeFile on a handle does not create a new path.
+        // Keep the same descriptor for the write: truncate + write at position 0
+        // so a concurrent delete/replace of the pathname cannot redirect the
+        // write to a different inode, and so a stale offset after readFile
+        // cannot insert NUL padding. write on a handle does not create a new path.
         await fileHandle.truncate( 0 );
-        await fileHandle.writeFile( result.updatedContent, 'utf8' );
+        await fileHandle.write( result.updatedContent, 0, 'utf8' );
         return result;
     } catch ( err ) {
         // Do not leak absolute filesystem paths via the shared /api/logs
