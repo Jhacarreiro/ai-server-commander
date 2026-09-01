@@ -41,7 +41,7 @@ Capabilities should not depend on a particular UI. Telegram relays, OpenClaw age
 
 ### REST
 
-1. The client sends a Bearer-authenticated GET or POST request.
+1. The client sends a Bearer-authenticated GET or POST request. `HEAD` is rejected with `405` and `Allow: GET, POST` before parsing or execution, because Express would otherwise map it onto GET.
 2. `serverModules/auth.js` validates `authToken`.
 3. `api/terminal.js` validates mode, path, shell, size and requested limits.
 4. `serverModules/commandExecutor.js` applies server caps and starts the process.
