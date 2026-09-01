@@ -34,6 +34,7 @@ The longer-term direction is broader than terminal access: Commander should rema
 - OAuth discovery, dynamic client registration, authorization code + PKCE, access tokens and refresh tokens.
 - MCP tool title, input/output schemas, risk annotations, OAuth security schemes and structured content.
 - Backward-compatible legacy REST endpoint for existing Custom GPT Actions.
+- Experimental read-only ChatGPT Web watcher over OpenCLI/CDP, disabled by default.
 
 ## Architecture
 
@@ -54,6 +55,7 @@ Claude / remote MCP client          ├── shared bounded executor ── hos
 That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. Planned examples include policy-aware read-only tools and an authenticated browser/session adapter for observing explicitly selected web conversations.
 
 See [docs/architecture.md](./docs/architecture.md) for request flows, trust boundaries and the module map.
+See [docs/chatgpt-web-mvp1.md](./docs/chatgpt-web-mvp1.md) for the disabled-by-default browser watcher contract.
 
 ## Requirements
 

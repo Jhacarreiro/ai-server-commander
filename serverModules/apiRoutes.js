@@ -3,6 +3,7 @@ const {createNoticeHandler, pendingNoticesHandler, ackNoticeHandler} = require('
 const {activityHandler, activityStatusHandler, activityIndexHandler, activityContextHandler} = require('../api/activityLog');
 const createMcpHandler = require('../api/mcp');
 const { addOAuthRoutes } = require('../api/oauth');
+const { createChatGPTWebHandlers } = require('../api/chatgptWeb');
 
 const exitApplicationHandler = require('../api/exitApplicationHandler');
 const {initDB} = require("./firebaseDB");
@@ -43,11 +44,17 @@ module.exports = {
             next();
         });
         const readEditTextFileHandler = require('../api/readEditTextFile2Handler')(getURL);
+        const { statusHandler: chatgptWebStatusHandler, latestHandler: chatgptWebLatestHandler, pendingHandler: chatgptWebPendingHandler, ackHandler: chatgptWebAckHandler, pollHandler: chatgptWebPollHandler } = createChatGPTWebHandlers(config);
         app.get('/api/runTerminalScript', wrapAsync(terminalHandler));
         app.post('/api/runTerminalScript', wrapAsync(terminalHandler));
         app.post('/v1/commands/execute', wrapAsync(terminalHandler));
         app.get('/api/server-url', wrapAsync(require('../api/getServerUrlHandler')(getURL)));
         app.get('/api/logs', wrapAsync(require('../api/getLogsHandler')));
+        app.get('/api/chatgpt-web/status', wrapAsync(chatgptWebStatusHandler));
+        app.get('/api/chatgpt-web/latest', wrapAsync(chatgptWebLatestHandler));
+        app.get('/api/chatgpt-web/pending', wrapAsync(chatgptWebPendingHandler));
+        app.post('/api/chatgpt-web/ack', wrapAsync(chatgptWebAckHandler));
+        app.post('/api/chatgpt-web/poll', wrapAsync(chatgptWebPollHandler));
         app.get('/api/activity', wrapAsync(activityHandler));
         app.get('/api/activity/status', wrapAsync(activityStatusHandler));
         app.get('/api/activity/index', wrapAsync(activityIndexHandler));
