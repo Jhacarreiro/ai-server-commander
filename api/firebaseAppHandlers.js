@@ -1,5 +1,9 @@
 const { getFirebaseAppByPublicId } = require('../serverModules/firebaseDB');
 
+function htmlEscape(value) {
+    return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 async function viewAppHandler(req, res) {
     const { public_id } = req.params;
     try {
@@ -12,8 +16,8 @@ async function viewAppHandler(req, res) {
         let html = `
 <html>
 <head>
-<title>${appData.name}</title>
-<meta name="description" content="${appData.description}">
+<title>${htmlEscape(appData.name)}</title>
+<meta name="description" content="${htmlEscape(appData.description)}">
 `;
 
 
@@ -49,8 +53,8 @@ async function editAppHandler(req, res) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>${appData.name}</title>
-    <meta name="description" content="${appData.description}">
+    <title>${htmlEscape(appData.name)}</title>
+    <meta name="description" content="${htmlEscape(appData.description)}">
 <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.21.0/firebase-app.js";
         import { getFirestore, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/9.21.0/firebase-firestore.js";
