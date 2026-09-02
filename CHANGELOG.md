@@ -8,6 +8,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Pinned patched transitive releases `qs@6.16.0` and `fast-uri@3.1.6` via npm overrides to clear the current production audit advisories without changing the Express 4 API surface.
 - ChatGPT Web watcher now primes each newly opened conversation before emitting, and persists a bounded recent-fingerprint history so lazy-loaded DOM oscillations cannot re-notify already seen responses.
 - MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
