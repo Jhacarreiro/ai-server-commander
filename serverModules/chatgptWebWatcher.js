@@ -4,6 +4,7 @@ const path = require('path');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const DEFAULT_STATE_PATH = path.join(PROJECT_ROOT, 'runtime', 'chatgpt-web-state.json');
+const MAX_RECENT_FINGERPRINTS = 64;
 
 function bool(value, fallback = false) {
     if (value == null || value === '') return fallback;
@@ -58,6 +59,7 @@ function resolveChatGPTWebConfig(config = {}, env = process.env) {
         cdpEndpoint: cdpEndpoint(env.CHATGPT_WEB_CDP_ENDPOINT ?? local.cdpEndpoint),
         conversationUrl: conversationUrl(env.CHATGPT_WEB_CONVERSATION_URL ?? local.conversationUrl),
         stableMs: int(env.CHATGPT_WEB_STABLE_MS ?? local.stableMs, 4000),
+        primeMs: int(env.CHATGPT_WEB_PRIME_MS ?? local.primeMs, 20000),
         pollMs: int(env.CHATGPT_WEB_POLL_MS ?? local.pollMs, 5000),
         statePath: path.isAbsolute(String(stateRaw)) ? String(stateRaw) : path.resolve(PROJECT_ROOT, String(stateRaw)),
         emitInitial: bool(env.CHATGPT_WEB_EMIT_INITIAL ?? local.emitInitial, false)
@@ -70,15 +72,19 @@ function fingerprint(conversationId, text) {
 
 function blankState() {
     return {
-        version: 1,
+        version: 2,
         status: 'idle',
         reason: 'not_polled',
         updatedAt: null,
         currentConversationId: null,
+        conversationSince: null,
+        conversationSawGenerating: false,
+        primedConversationId: null,
         candidateFingerprint: null,
         candidateSince: null,
         lastCompletedFingerprint: null,
         lastCompletedAt: null,
+        recentFingerprints: [],
         latest: null,
         pendingFingerprint: null,
         pendingSince: null,
@@ -87,9 +93,30 @@ function blankState() {
     };
 }
 
+function normalizeRecentFingerprints(value) {
+    const input = Array.isArray(value) ? value : [];
+    const out = [];
+    for (const item of input) {
+        const fp = String(item || '').trim();
+        if (!fp) continue;
+        const existing = out.indexOf(fp);
+        if (existing >= 0) out.splice(existing, 1);
+        out.push(fp);
+    }
+    return out.slice(-MAX_RECENT_FINGERPRINTS);
+}
+
+function rememberFingerprint(state, fp) {
+    return normalizeRecentFingerprints([...(state.recentFingerprints || []), fp]);
+}
+
 function readState(filePath) {
-    try { return { ...blankState(), ...JSON.parse(fs.readFileSync(filePath, 'utf8')) }; }
-    catch { return blankState(); }
+    try {
+        const state = { ...blankState(), ...JSON.parse(fs.readFileSync(filePath, 'utf8')) };
+        state.version = 2;
+        state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
+        return state;
+    } catch { return blankState(); }
 }
 
 function writeStateAtomic(filePath, value) {
@@ -111,6 +138,7 @@ function publicStatus(settings, state) {
         configuredConversationId: conversationIdFromUrl(settings.conversationUrl),
         pollMs: settings.pollMs,
         stableMs: settings.stableMs,
+        primeMs: settings.primeMs,
         latest: state.latest ? {
             conversationId: state.latest.conversationId,
             fingerprint: state.latest.fingerprint,
@@ -248,17 +276,49 @@ class ChatGPTWebWatcher {
 
         const currentId = conversationIdFromUrl(snap.url);
         const configuredId = conversationIdFromUrl(this.settings.conversationUrl);
-        const common = { ...state, updatedAt: nowIso, currentConversationId: currentId, lastError: null };
+        const previousId = state.currentConversationId;
+        const conversationChanged = Boolean(currentId && currentId !== previousId);
+        const common = { ...state, version: 2, updatedAt: nowIso, currentConversationId: currentId, lastError: null };
         const finish = (patch, extra = {}) => {
             state = { ...common, ...patch };
+            state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false, ...extra };
         };
+        const resetConversation = {
+            candidateFingerprint: null,
+            candidateSince: null,
+            conversationSince: null,
+            conversationSawGenerating: false,
+            primedConversationId: null
+        };
 
-        if (!snap.authenticated) return finish({ status: 'needs_human', reason: 'authentication_required', candidateFingerprint: null, candidateSince: null });
-        if (configuredId && currentId !== configuredId) return finish({ status: 'needs_human', reason: 'configured_conversation_not_open', candidateFingerprint: null, candidateSince: null });
-        if (!currentId) return finish({ status: 'idle', reason: 'conversation_not_open', candidateFingerprint: null, candidateSince: null });
-        if (snap.generating) return finish({ status: 'generating', reason: 'assistant_generating', candidateFingerprint: null, candidateSince: null });
+        if (!snap.authenticated) return finish({ status: 'needs_human', reason: 'authentication_required', ...resetConversation });
+        if (configuredId && currentId !== configuredId) return finish({ status: 'needs_human', reason: 'configured_conversation_not_open', ...resetConversation });
+        if (!currentId) return finish({ status: 'idle', reason: 'conversation_not_open', ...resetConversation });
+
+        if (conversationChanged) {
+            return finish({
+                status: 'stabilizing',
+                reason: 'conversation_changed',
+                candidateFingerprint: null,
+                candidateSince: null,
+                conversationSince: nowIso,
+                conversationSawGenerating: false,
+                primedConversationId: null
+            });
+        }
+
+        if (snap.generating) {
+            return finish({
+                status: 'generating',
+                reason: 'assistant_generating',
+                candidateFingerprint: null,
+                candidateSince: null,
+                conversationSince: state.conversationSince || nowIso,
+                conversationSawGenerating: true
+            });
+        }
 
         const text = String(snap.assistantText || '').trim();
         if (!text) return finish({ status: 'idle', reason: 'no_assistant_response', candidateFingerprint: null, candidateSince: null });
@@ -268,27 +328,65 @@ class ChatGPTWebWatcher {
         const since = Date.parse(state.candidateSince || '');
         if (!Number.isFinite(since) || nowMs - since < this.settings.stableMs) return finish({ status: 'stabilizing', reason: 'waiting_for_stability' });
 
-        const first = !state.lastCompletedFingerprint;
-        const changed = state.lastCompletedFingerprint !== fp;
-        const newResponse = changed && (!first || this.settings.emitInitial);
-        if (changed) {
+        const primed = state.primedConversationId === currentId;
+        const sawGenerating = state.conversationSawGenerating === true;
+        if (!primed && !sawGenerating) {
+            let openedAt = Date.parse(state.conversationSince || '');
+            if (!Number.isFinite(openedAt)) {
+                return finish({ status: 'stabilizing', reason: 'conversation_warming_up', conversationSince: nowIso });
+            }
+            if (nowMs - openedAt < this.settings.primeMs) {
+                return finish({ status: 'stabilizing', reason: 'conversation_warming_up' });
+            }
             state = {
                 ...common,
                 status: 'completed',
-                reason: first && !this.settings.emitInitial ? 'baseline_recorded' : 'new_response',
+                reason: 'baseline_recorded',
+                primedConversationId: currentId,
+                conversationSawGenerating: false,
                 lastCompletedFingerprint: fp,
                 lastCompletedAt: nowIso,
-                latest: { conversationId: currentId, url: snap.url, fingerprint: fp, text, chars: text.length, completedAt: nowIso },
-                pendingFingerprint: newResponse ? fp : state.pendingFingerprint,
-                pendingSince: newResponse ? nowIso : state.pendingSince,
-                ackedAt: newResponse ? null : state.ackedAt
+                recentFingerprints: rememberFingerprint(state, fp),
+                latest: state.pendingFingerprint ? state.latest : { conversationId: currentId, url: snap.url, fingerprint: fp, text, chars: text.length, completedAt: nowIso }
             };
-        } else {
-            state = { ...common, status: 'completed', reason: 'response_already_seen' };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false, baseline: true };
         }
+
+        const seenBefore = normalizeRecentFingerprints(state.recentFingerprints).includes(fp);
+        if (seenBefore) {
+            state = {
+                ...common,
+                status: 'completed',
+                reason: 'response_seen_before',
+                primedConversationId: currentId,
+                conversationSawGenerating: false,
+                lastCompletedFingerprint: fp,
+                lastCompletedAt: nowIso,
+                recentFingerprints: rememberFingerprint(state, fp)
+            };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        state = {
+            ...common,
+            status: 'completed',
+            reason: 'new_response',
+            primedConversationId: currentId,
+            conversationSawGenerating: false,
+            lastCompletedFingerprint: fp,
+            lastCompletedAt: nowIso,
+            recentFingerprints: rememberFingerprint(state, fp),
+            latest: { conversationId: currentId, url: snap.url, fingerprint: fp, text, chars: text.length, completedAt: nowIso },
+            pendingFingerprint: fp,
+            pendingSince: nowIso,
+            ackedAt: null
+        };
         this.save(state);
-        return { ...publicStatus(this.settings, state), newResponse, baseline: changed && first && !this.settings.emitInitial };
+        return { ...publicStatus(this.settings, state), newResponse: true, baseline: false };
     }
+
 }
 
 module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readState, resolveChatGPTWebConfig, writeStateAtomic };
