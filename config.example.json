@@ -8,6 +8,7 @@
     "cdpEndpoint": "http://127.0.0.1:9223",
     "conversationUrl": null,
     "stableMs": 4000,
+    "primeMs": 20000,
     "pollMs": 5000,
     "statePath": "runtime/chatgpt-web-state.json",
     "emitInitial": false
