@@ -30,6 +30,7 @@ The feature is disabled unless `chatgptWeb.enabled` or `CHATGPT_WEB_ENABLED` is 
     "cdpEndpoint": "http://127.0.0.1:9223",
     "conversationUrl": null,
     "stableMs": 4000,
+    "primeMs": 20000,
     "pollMs": 5000,
     "statePath": "runtime/chatgpt-web-state.json",
     "emitInitial": false
@@ -37,7 +38,7 @@ The feature is disabled unless `chatgptWeb.enabled` or `CHATGPT_WEB_ENABLED` is 
 }
 ```
 
-Environment variables with matching names are also accepted: `CHATGPT_WEB_ENABLED`, `CHATGPT_WEB_CDP_ENDPOINT`, `CHATGPT_WEB_CONVERSATION_URL`, `CHATGPT_WEB_STABLE_MS`, `CHATGPT_WEB_POLL_MS`, `CHATGPT_WEB_STATE_PATH`, and `CHATGPT_WEB_EMIT_INITIAL`.
+Environment variables with matching names are also accepted: `CHATGPT_WEB_ENABLED`, `CHATGPT_WEB_CDP_ENDPOINT`, `CHATGPT_WEB_CONVERSATION_URL`, `CHATGPT_WEB_STABLE_MS`, `CHATGPT_WEB_PRIME_MS`, `CHATGPT_WEB_POLL_MS`, `CHATGPT_WEB_STATE_PATH`, and `CHATGPT_WEB_EMIT_INITIAL`.
 
 MVP1 restricts CDP to a loopback host. `conversationUrl`, when configured, must be an HTTPS `chatgpt.com` URL containing `/c/<conversation-id>`.
 
@@ -66,7 +67,7 @@ MVP1 uses these states:
 - `needs_human` — authentication is missing or a configured conversation is not open;
 - `error` — the browser/CDP snapshot failed.
 
-The first stable response is treated as a baseline by default (`emitInitial: false`) so enabling the watcher does not emit an old response as new. A later stable fingerprint returns `newResponse: true` exactly once and remains available through `/pending` until a downstream client acknowledges that exact fingerprint. This pending state survives Commander restarts. State is written atomically with mode `0600` under `runtime/`, which is excluded from Git.
+When a conversation is opened or changed, the watcher primes it for `primeMs` (20 seconds by default) and records the first stable assistant response as that conversation's baseline instead of notifying old content. Stable fingerprints are retained in a bounded recent-history ring, so DOM lazy-load oscillations such as `A → B → A` cannot re-emit a fingerprint already observed. A genuinely new stable fingerprint returns `newResponse: true` exactly once and remains available through `/pending` until a downstream client acknowledges that exact fingerprint. Pending and dedup state survive Commander restarts. State is written atomically with mode `0600` under `runtime/`, which is excluded from Git.
 
 ## Safety rules
 
