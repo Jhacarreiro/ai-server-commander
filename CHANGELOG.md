@@ -12,6 +12,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
 
+### Fixed
+
+- `/api/restart` now closes the HTTP listener and waits for in-flight responses to drain before exiting, instead of force-exiting after 500 ms. A last-resort exit still applies if drain exceeds `RESTART_FORCE_EXIT_MS` (default 30000).
+
 ### Added
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
