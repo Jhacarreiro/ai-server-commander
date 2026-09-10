@@ -2,6 +2,10 @@ const fs = require( "fs" );
 const conflictDelimiterRegex = /<<<<<<< HEAD[\s\S]*?>>>>>>> [\w-]+/g;
 const recursiveFuzzyIndexOf = require( './fuzzySearch' );
 
+// Levenshtein is O(n*m); unbounded fuzzy search can hang the event loop.
+const MAX_FUZZY_QUERY_CHARS = Math.max(16, Number.parseInt(process.env.MAX_FUZZY_QUERY_CHARS || '256', 10) || 256);
+const MAX_FUZZY_HAYSTACK_CHARS = Math.max(1024, Number.parseInt(process.env.MAX_FUZZY_HAYSTACK_CHARS || String(256 * 1024), 10) || (256 * 1024));
+
 const expandToFullLines = ( fileContent, startIndex, endIndex ) => {
   // Expand the start index to the beginning of the line
   while ( startIndex > 0 && fileContent[ startIndex - 1 ] !== '\n' ) {
@@ -75,6 +79,17 @@ const applyReplacements = async ( fileContent, replacements ) => {
       unsuccessfulReplacements.push( `Multiple occurrences found for text: '${originalText}' found ${startCounts} times. Occurrences found around these lines:\n${linesAroundOccurrences.join('\n---\n')}` );
       return;
     } else if ( startIndex < 0 ) {
+      if (
+        typeof originalText !== 'string' ||
+        originalText.length === 0 ||
+        originalText.length > MAX_FUZZY_QUERY_CHARS ||
+        fileContent.length > MAX_FUZZY_HAYSTACK_CHARS
+      ) {
+        unsuccessfulReplacements.push(
+          `Text not found: '${originalText}' (fuzzy match skipped: query/file exceeds MAX_FUZZY_QUERY_CHARS=${MAX_FUZZY_QUERY_CHARS} or MAX_FUZZY_HAYSTACK_CHARS=${MAX_FUZZY_HAYSTACK_CHARS})`
+        );
+        return;
+      }
       const fuzzyResult = recursiveFuzzyIndexOf( fileContent, originalText );
       if ( fuzzyResult.distance / originalText.length < 0.3 ) {
         fuzzyReplacements.push( `Fuzzy replacement, searched for ${originalText}, found ${fuzzyResult.value}` )
