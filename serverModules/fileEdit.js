@@ -21,14 +21,35 @@ const expandToFullLines = ( fileContent, startIndex, endIndex ) => {
 
 const parseConflicts = ( conflictText ) => {
   const conflicts = conflictText.match( conflictDelimiterRegex ) || [];
-  return conflicts.map( conflict => {
+  // Unterminated <<<<<<< HEAD without a closing >>>>>>> must not be silently ignored.
+  const startCount = ( conflictText.match( /<<<<<<< HEAD/g ) || [] ).length;
+  if ( startCount !== conflicts.length ) {
+    const excerpt = (() => {
+      // Find first start that is not part of a matched block.
+      let remaining = conflictText;
+      for ( const block of conflicts ) {
+        const idx = remaining.indexOf( block );
+        if ( idx >= 0 ) remaining = remaining.slice( 0, idx ) + remaining.slice( idx + block.length );
+      }
+      const idx = remaining.indexOf( "<<<<<<< HEAD" );
+      const snippet = idx >= 0 ? remaining.slice( idx, idx + 120 ) : remaining.slice( 0, 120 );
+      return snippet.length > 80 ? snippet.slice( 0, 80 ) + "..." : snippet;
+    })();
+    throw new Error("Malformed conflict block: missing closing >>>>>>> marker or ======= separator. Offending block: " + excerpt);
+  }
+  return conflicts.flatMap( conflict => {
     const parts = conflict.split( "=======" );
-    const originalText = parts[ 0 ].replace( /<<<<<<< HEAD\n/, "" );
-    const replacementText = parts[ 1 ].replace( /\n>>>>>>> [\w-]+/, "" );
-    return {
+    if (parts.length < 2) {
+      const excerpt = conflict.length > 80 ? conflict.slice(0, 80) + "..." : conflict;
+      throw new Error("Malformed conflict block: expected a ======= separator between original and replacement text. Offending block: " + excerpt);
+    }
+    const originalText = parts[ 0 ].replace( /<<<<<<< HEAD\n?/, "" );
+    // Join remaining parts so content containing "=======" is preserved.
+    const replacementText = parts.slice(1).join("=======").replace( /\n?>>>>>>> [\w-]+\s*$/, "" );
+    return [{
       originalText,
       replacementText
-    };
+    }];
   } );
 };
 
@@ -38,12 +59,44 @@ const applyReplacements = async ( fileContent, replacements ) => {
   let unsuccessfulReplacements = [];
   let fuzzyReplacements = [];
 
+  // Atomic validation: a mixed batch (valid entry followed by an empty
+  // originalText) would otherwise return a partially edited updatedContent
+  // with unsuccessfulReplacements. Pre-validate the whole batch so an invalid
+  // entry leaves updatedContent === originalContent.
+  // Empty originalText is the creation marker in the paired
+  // fix/no-empty-file-on-failed-edit contract (PR #33): on an empty file
+  // (fileContent === '') a literal "" means "insert initial content".
+  // Reject it for every other case, including null/undefined.
+  const preInvalid = [];
+  for ( const r of ( replacements || [] ) ) {
+    const o = r && r.originalText;
+    const rep = r && r.replacementText;
+    const isCreationMarker = o === "" && fileContent === "";
+    if (o == null || o === "") {
+      if (!isCreationMarker) preInvalid.push("Search text (originalText) must be a non-empty string.");
+      // creation marker itself falls through to replacement validation
+      if (!isCreationMarker) continue;
+    } else if (typeof o !== "string") {
+      preInvalid.push("Search text (originalText) must be a string.");
+      continue;
+    }
+    if (rep == null) preInvalid.push("Replacement text (replacementText) must be a string; use an empty string to explicitly delete matched text.");
+    else if (typeof rep !== "string") preInvalid.push("Replacement text (replacementText) must be a string.");
+  }
+  if ( preInvalid.length ) {
+    return { updatedContent: originalContent, unsuccessfulReplacements: preInvalid, fuzzyReplacements: [], originalContent };
+  }
+
   replacements.forEach( ( {
     originalText,
     replacementText
   } ) => {
-    if(!originalText) {
-      originalText = "";
+    // Creation marker: empty originalText on an empty file is the
+    // explicit "insert initial content" path (see pre-validation comment);
+    // it does not go through the normal search/fuzzy logic.
+    if ( originalText === "" && originalContent === "" ) {
+      fileContent = replacementText;
+      return;
     }
     // Initialize occurrences array
     let occurrences = [];
