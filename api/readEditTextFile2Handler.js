@@ -34,7 +34,9 @@ const replaceTextInSection = async ( filePath, replacements ) => {
         fileHandle = await fs.promises.open( filePath, 'a+' ); // Open file, 'a+' flag still creates the file if it doesn't exist
         fileContent = await fileHandle.readFile( 'utf8' );
     } catch ( err ) {
-        log( 'Error reading or creating file:', err );
+        // Do not log the raw Error object: Node fs errors carry an enumerable
+        // `path` that survives JSON serialization via /api/logs.
+        log( 'Error reading or creating file:', err instanceof Error ? err.message : String( err ) );
     } finally {
         if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
     }
@@ -224,8 +226,11 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         };
         // TODO no such dir fix
         // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\n', 'utf8' );
+        // logger.log is returned by authenticated /api/logs — never pass error.stack.
+        const clientError = stringifyError( error );
+        log( 'read-or-edit-file failed', clientError );
         res.status( 500 ).json( {
-            error: stringifyError( error )
+            error: clientError
         } );
     }
 };
