@@ -5,7 +5,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { OAuthStore } = require('../serverModules/oauthStore');
+const { OAuthStore, hashSecret } = require('../serverModules/oauthStore');
 
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-oauth-'));
@@ -104,11 +104,137 @@ function pkceChallenge(verifier) {
     return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
+function readState(filePath) {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function assertHashedRecord(section, rawValue, present, label) {
+    const hashed = hashSecret(rawValue);
+    const record = section[hashed];
+    if (present) assert.ok(record, label);
+    else assert.strictEqual(record, undefined, label);
+}
+
+function runChildStoreScript(statePath, source) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', source], {
+            cwd: root,
+            env: { ...process.env, OAUTH_STATE_PATH: statePath },
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => { stdout += chunk; });
+        child.stderr.on('data', (chunk) => { stderr += chunk; });
+        child.on('error', reject);
+        child.on('exit', (code) => {
+            if (code === 0) resolve(stdout.trim());
+            else reject(new Error(`child store script exited ${code}: ${stderr || stdout}`));
+        });
+    });
+}
+
 (async () => {
     const corruptPath = path.join(temp, 'corrupt.json');
     fs.writeFileSync(corruptPath, '{not-json', { mode: 0o600 });
     assert.throws(() => new OAuthStore(corruptPath), /Unable to read OAuth state/);
     console.log('PASS corrupt OAuth state fails closed');
+
+    const expiryDir = path.join(temp, 'expiry-read');
+    fs.mkdirSync(expiryDir, { recursive: true });
+    for (const kind of ['authCodes', 'accessTokens', 'refreshTokens']) {
+        let now = 1_000;
+        const filePath = path.join(expiryDir, `${kind}.json`);
+        const store = new OAuthStore(filePath, () => now);
+        const live = `${kind}-live`;
+        const expired = `${kind}-expired`;
+        const liveRecord = { client_id: 'expiry-client', expires_at: 5_000 };
+        const expiredRecord = { client_id: 'expiry-client', expires_at: 1_500 };
+        if (kind === 'authCodes') {
+            store.setAuthCode(live, liveRecord);
+            store.setAuthCode(expired, expiredRecord);
+            now = 2_000;
+            assert.strictEqual(store.getAuthCode(expired), null);
+            assert.ok(store.getAuthCode(live));
+        } else if (kind === 'accessTokens') {
+            store.setAccessToken(live, liveRecord);
+            store.setAccessToken(expired, expiredRecord);
+            now = 2_000;
+            assert.strictEqual(store.getAccessToken(expired), null);
+            assert.ok(store.getAccessToken(live));
+        } else {
+            store.setRefreshToken(live, liveRecord);
+            store.setRefreshToken(expired, expiredRecord);
+            now = 2_000;
+            assert.strictEqual(store.getRefreshToken(expired), null);
+            assert.ok(store.getRefreshToken(live));
+        }
+        const persisted = readState(filePath);
+        assertHashedRecord(persisted[kind], expired, false, `${kind} expired hash removed from disk`);
+        assertHashedRecord(persisted[kind], live, true, `${kind} live hash remains on disk`);
+        assert.ok(!JSON.stringify(persisted).includes(expired), `${kind} raw expired value is not persisted`);
+        assert.ok(!JSON.stringify(persisted).includes(live), `${kind} raw live value is not persisted`);
+        console.log(`PASS expired ${kind} removed from disk after getter`);
+    }
+
+    const sharedPath = path.join(temp, 'shared-oauth-state.json');
+    let sharedNow = 10_000;
+    const writer = new OAuthStore(sharedPath, () => sharedNow);
+    writer.setAccessToken('keep-access', { client_id: 'shared-client', expires_at: 80_000 });
+    writer.setAccessToken('revoke-access', { client_id: 'shared-client', expires_at: 80_000 });
+    writer.setRefreshToken('keep-refresh', { client_id: 'shared-client', expires_at: 80_000 });
+    writer.setRefreshToken('rotate-old', { client_id: 'shared-client', expires_at: 80_000 });
+    writer.setAuthCode('soon-expired-code', { client_id: 'shared-client', expires_at: 10_500 });
+
+    const stale = new OAuthStore(sharedPath, () => sharedNow);
+    writer.revokeToken('revoke-access', 'shared-client');
+    writer.rotateRefreshToken(
+        'rotate-old',
+        'rotated-access',
+        { client_id: 'shared-client', expires_at: 80_000 },
+        'rotate-new',
+        { client_id: 'shared-client', expires_at: 80_000 }
+    );
+    writer.setAccessToken('writer-new-access', { client_id: 'shared-client', expires_at: 80_000 });
+
+    sharedNow = 11_000;
+    assert.strictEqual(stale.getAuthCode('soon-expired-code'), null);
+
+    const afterStaleRead = readState(sharedPath);
+    assertHashedRecord(afterStaleRead.accessTokens, 'revoke-access', false, 'revoked access stays deleted after stale prune');
+    assertHashedRecord(afterStaleRead.refreshTokens, 'rotate-old', false, 'rotated-away refresh stays deleted after stale prune');
+    assertHashedRecord(afterStaleRead.accessTokens, 'keep-access', true, 'unrelated access survives stale prune');
+    assertHashedRecord(afterStaleRead.refreshTokens, 'keep-refresh', true, 'unrelated refresh survives stale prune');
+    assertHashedRecord(afterStaleRead.accessTokens, 'writer-new-access', true, 'newer access from other instance survives stale prune');
+    assertHashedRecord(afterStaleRead.refreshTokens, 'rotate-new', true, 'rotated-in refresh survives stale prune');
+    assert.strictEqual(stale.getAccessToken('revoke-access'), null);
+    assert.strictEqual(stale.getRefreshToken('rotate-old'), null);
+    assert.ok(stale.getAccessToken('writer-new-access'));
+    assert.ok(stale.getRefreshToken('rotate-new'));
+    console.log('PASS stale read-prune does not restore revoked or rotated tokens');
+    console.log('PASS newer tokens from the other instance survive stale read-prune');
+
+    const racePath = path.join(temp, 'race-oauth-state.json');
+    const storeModule = path.join(root, 'serverModules', 'oauthStore.js');
+    const childScript = (rawToken) => `
+        const { OAuthStore } = require(${JSON.stringify(storeModule)});
+        const store = new OAuthStore(${JSON.stringify(racePath)});
+        store.setAccessToken(${JSON.stringify(rawToken)}, {
+            client_id: 'race-client',
+            expires_at: Date.now() + 60_000
+        });
+        process.stdout.write('wrote');
+    `;
+    await Promise.all([
+        runChildStoreScript(racePath, childScript('race-token-a')),
+        runChildStoreScript(racePath, childScript('race-token-b'))
+    ]);
+    const raced = readState(racePath);
+    assertHashedRecord(raced.accessTokens, 'race-token-a', true, 'concurrent writer A token survived');
+    assertHashedRecord(raced.accessTokens, 'race-token-b', true, 'concurrent writer B token survived');
+    assert.ok(!JSON.stringify(raced).includes('race-token-a'));
+    assert.ok(!JSON.stringify(raced).includes('race-token-b'));
+    console.log('PASS concurrent writers keep both new tokens');
 
     await startServer();
 
