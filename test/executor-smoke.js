@@ -1,5 +1,8 @@
 const { executeBounded, parseRequest } = require('../api/terminal');
 const { getActiveCommandIds, interruptCommand } = require('../serverModules/commandExecutor');
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 function assert(cond, label, details = '') {
     if (!cond) throw new Error(label + (details ? ': ' + details : ''));
@@ -23,6 +26,15 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const parsedScript = parseRequest({ method: 'POST', body: { mode: 'script', script: 'echo hi' }, query: {} });
     assert(parsedScript.mode === 'script' && parsedScript.script === 'echo hi', 'parseRequest script mode');
+
+    const parsedAuto = parseRequest({ method: 'POST', body: { script: 'echo hi' }, query: {} });
+    assert(parsedAuto.mode === 'script' && parsedAuto.script === 'echo hi', 'parseRequest auto-detects script mode from script-only body');
+
+    const envNoShell = Object.assign({}, process.env);
+    delete envNoShell.SHELL;
+    const resolvedShell = execFileSync(process.execPath, ['-e', 'process.stdout.write(require("./serverModules/commandExecutor").DEFAULT_SHELL)'], { cwd: path.join(__dirname, '..'), env: envNoShell, encoding: 'utf8' });
+    const expectedShell = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+    assert(resolvedShell === expectedShell, 'DEFAULT_SHELL prefers /bin/bash, falls back to /bin/sh when unset', resolvedShell);
 
     const parsedGet = parseRequest({ method: 'GET', query: { command: 'pwd', cwd: '/tmp', timeoutMs: '5000', maxOutputChars: '99' }, body: {} });
     assert(parsedGet.cwd === '/tmp' && parsedGet.timeoutMs === 5000 && parsedGet.maxOutputChars === 99, 'parseRequest GET options');
