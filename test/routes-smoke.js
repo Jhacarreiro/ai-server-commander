@@ -161,6 +161,31 @@ function assert(condition, label, details = '') {
 
     r = await request('GET', '/api/server-url');
     assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
+    const noticeOkPrefix = 'routes-smoke-notice-ok-';
+    r = await request('POST', '/api/notices', { text: noticeOkPrefix + 'x'.repeat(8192 - noticeOkPrefix.length) });
+    if (r.body && typeof r.body === 'object' && r.body.message) {
+      assert((r.status === 200 || r.status === 201) && String(r.body.message).length > 0, 'notice text at 8192 is accepted', JSON.stringify(r.body));
+    } else {
+      assert(r.status === 200 || r.status === 201, 'notice text at 8192 is accepted', String(r.status));
+    }
+
+    const noticeOverPrefix = 'routes-smoke-notice-over-';
+    r = await request('POST', '/api/notices', { text: noticeOverPrefix + 'x'.repeat(8193 - noticeOverPrefix.length) });
+    assert(r.status === 400 && r.body && String(r.body.message || '').includes('8192'), 'notice text over 8192 is rejected', JSON.stringify(r.body));
+
+    r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(256) });
+    assert(r.status === 200 || r.status === 201, 'notice source at 256 is accepted', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(257) });
+    assert(r.status === 400 && String(r.body.message || '').includes('source'), 'notice source over 256 is rejected', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'meta-ok', conversationId: 'c'.repeat(256), taskId: 't'.repeat(256), taskTitle: 'n'.repeat(256) });
+    assert(r.status === 200 || r.status === 201, 'notice metadata at 256 is accepted', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'meta-over', conversationId: 'c'.repeat(4000), taskTitle: 'n'.repeat(4000) });
+    assert(r.status === 200 || r.status === 201, 'oversized notice metadata is truncated not rejected', JSON.stringify(r.body));
+    const notice = r.body && r.body.notice;
+    if (notice) {
+        assert(String(notice.targetConversationId || '').length <= 256, 'conversationId bounded', notice.targetConversationId && notice.targetConversationId.length);
+        assert(!notice.targetTaskTitle || String(notice.targetTaskTitle).length <= 256, 'taskTitle bounded');
+    }
 
   } finally {
     if (server) server.kill('SIGTERM');
