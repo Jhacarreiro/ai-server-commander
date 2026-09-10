@@ -299,6 +299,25 @@ function assert(condition, label, details = '') {
             status: response.status,
             error: response.body.error
         }, null, 2));
+        const bothFieldsArgs = { command: 'printf mcp_both_should_not_run', script: 'printf mcp_script_both_should_not_run' };
+        response = await rpc({
+            jsonrpc: '2.0', id: 12, method: 'tools/call',
+            params: { name: 'run_terminal_command', arguments: bothFieldsArgs }
+        });
+        assert(
+            response.status === 200 &&
+            response.body.error &&
+            response.body.error.code === -32602 &&
+            response.body.error.message === 'Provide either command or script, not both.',
+            'MCP rejects both command and script',
+            JSON.stringify(response.body)
+        );
+        console.log('LIVE MCP both-fields tools/call\n' + JSON.stringify({
+            request: bothFieldsArgs,
+            status: response.status,
+            error: response.body.error
+        }, null, 2));
+
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();

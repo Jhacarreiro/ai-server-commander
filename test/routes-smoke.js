@@ -162,6 +162,18 @@ function assert(condition, label, details = '') {
     r = await request('GET', '/api/server-url');
     assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
 
+    const bothFieldsBody = { command: 'printf rest_both_should_not_run', script: 'printf script_both_should_not_run' };
+    r = await request('POST', '/v1/commands/execute', bothFieldsBody);
+    assert(
+      r.status === 400 && r.body && r.body.message === 'Provide either command or script, not both.',
+      'POST rejects both command and script',
+      JSON.stringify(r.body)
+    );
+    console.log('LIVE REST both-fields POST /v1/commands/execute\n' + JSON.stringify({
+      request: bothFieldsBody,
+      status: r.status,
+      body: r.body
+    }, null, 2));
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
