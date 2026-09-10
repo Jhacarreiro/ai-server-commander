@@ -143,8 +143,10 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     if ( typeof filePath !== 'string' || !filePath.trim() ) {
         return res.status( 400 ).json( { error: 'File path is required.' } );
     }
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    // Fix absolute paths for bwrap sandbox (HOME=/home/exec, workdir=/work):
+    // naive startsWith fails for /work vs /home/exec, so use path.isAbsolute.
+    if ( !path.isAbsolute( filePath ) ) {
+        filePath = path.join( currentDir, filePath );
     }
 
     let replaceResult;
