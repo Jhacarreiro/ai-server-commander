@@ -13,10 +13,16 @@ const {getLog} = require("../serverModules/logger");
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: string
- *               description: Server logs
+ *               type: object
+ *               properties:
+ *                 logs:
+ *                   type: array
+ *                   items:
+ *                     type: array
+ *                     items: true
+ *                   description: Server log entries (variadic argument tuples as recorded by the logger)
+ *               required:
+ *                 - logs
  */
 module.exports = (req, res) => {
     res.json({ logs: getLog() });
