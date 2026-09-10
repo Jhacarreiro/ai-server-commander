@@ -7,6 +7,7 @@ const {
     COMMAND_TIMEOUT_MS,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
+    MAX_INLINE_COMMAND_BYTES,
     MAX_SHELL_BYTES,
     SAFE_MODE,
     executeBounded,
@@ -44,6 +45,9 @@ function parseRequest(req) {
 
     if (mode === 'inline' && (typeof command !== 'string' || !command.trim())) {
         return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+    }
+    if (mode === 'inline' && Buffer.byteLength(command, 'utf8') > MAX_INLINE_COMMAND_BYTES) {
+        return { error: true, status: 413, message: 'Inline command exceeds maximum of ' + MAX_INLINE_COMMAND_BYTES + ' bytes.' };
     }
     if (mode === 'script' && (typeof script !== 'string' || !script)) {
         return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };

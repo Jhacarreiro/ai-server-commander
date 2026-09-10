@@ -10,6 +10,7 @@ function positiveInteger(value, fallback) {
 const MAX_OUTPUT_CHARS = positiveInteger(process.env.MAX_OUTPUT_CHARS, 12000);
 const COMMAND_TIMEOUT_MS = positiveInteger(process.env.COMMAND_TIMEOUT_MS, 120000);
 const MAX_SCRIPT_BODY_BYTES = positiveInteger(process.env.MAX_SCRIPT_BODY_BYTES, 524288);
+const MAX_INLINE_COMMAND_BYTES = positiveInteger(process.env.MAX_INLINE_COMMAND_BYTES, 65536);
 const MAX_CWD_BYTES = 1024;
 const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
@@ -158,6 +159,7 @@ module.exports = {
     MAX_CWD_BYTES,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
+    MAX_INLINE_COMMAND_BYTES,
     MAX_SHELL_BYTES,
     SAFE_MODE,
     executeBounded,
