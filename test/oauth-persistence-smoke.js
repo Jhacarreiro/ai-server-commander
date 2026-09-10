@@ -233,6 +233,55 @@ function pkceChallenge(verifier) {
     assert.strictEqual(response.status, 200, response.text);
     console.log('PASS access token authorizes MCP before restart');
 
+    // PKCE negative paths.
+    {
+        const wrongVerifier = crypto.randomBytes(32).toString('base64url');
+        const correctVerifier = crypto.randomBytes(32).toString('base64url');
+        response = await request('POST', '/oauth/authorize', {
+            form: {
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                code_challenge: pkceChallenge(correctVerifier),
+                code_challenge_method: 'S256',
+                approval_code: authToken,
+                resource: `http://127.0.0.1:${port}/mcp`,
+                scope: 'terminal'
+            }
+        });
+        assert.strictEqual(response.status, 302, response.text);
+        const codeForBadVerifier = new URL(response.headers.location).searchParams.get('code');
+        response = await request('POST', '/oauth/token', {
+            body: {
+                grant_type: 'authorization_code',
+                client_id: clientId,
+                client_secret: clientSecret,
+                code: codeForBadVerifier,
+                redirect_uri: redirectUri,
+                code_verifier: wrongVerifier
+            }
+        });
+        assert.strictEqual(response.status, 400, response.text);
+        assert.strictEqual(response.body.error, 'invalid_grant');
+        assert.ok(/pkce/i.test(String(response.body.error_description || '')));
+        console.log('PASS wrong PKCE code_verifier rejected with invalid_grant');
+
+        // Auth code reuse: after the failed exchange, correct verifier still
+        // redeems the original code.
+        response = await request('POST', '/oauth/token', {
+            body: {
+                grant_type: 'authorization_code',
+                client_id: clientId,
+                client_secret: clientSecret,
+                code: codeForBadVerifier,
+                redirect_uri: redirectUri,
+                code_verifier: correctVerifier
+            }
+        });
+        assert.strictEqual(response.status, 200, response.text);
+        console.log('PASS auth code survives failed PKCE attempt and redeems with correct verifier');
+    }
+
     await stopServer();
     await startServer();
 
