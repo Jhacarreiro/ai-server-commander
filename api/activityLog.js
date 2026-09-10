@@ -31,7 +31,12 @@ function getActivityContext(req, overrides = {}) {
     const conversationId = firstValue(overrides.conversationId, query.conversationId, query.conversation_id, body.conversationId, body.conversation_id, headers['openai-conversation-id'], headers['x-conversation-id']) || 'unknown';
     const conversationKey = safeId(conversationId, 'unknown');
     const contexts = loadContexts();
-    const saved = contexts.conversations[conversationKey] || {};
+    // Guard legacy/foreign shapes: loadContexts falls back only for missing
+    // or unparseable files, not for valid JSON lacking the conversations key
+    // (e.g. an old-format {"version":1}) - that shape crashed every activity
+    // endpoint with a TypeError.
+    const conversations = contexts && typeof contexts.conversations === 'object' ? contexts.conversations : {};
+    const saved = conversations[conversationKey] || {};
     const taskId = firstValue(overrides.taskId, query.taskId, query.task_id, body.taskId, body.task_id, saved.taskId) || 'default';
     const taskTitle = firstValue(overrides.taskTitle, query.taskTitle, query.task_title, body.taskTitle, body.task_title, saved.taskTitle) || null;
     const taskKey = safeId(taskId, 'default');
