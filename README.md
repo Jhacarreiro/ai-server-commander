@@ -4,16 +4,14 @@
 [![Release](https://img.shields.io/github/v/release/Jhacarreiro/ai-server-commander)](https://github.com/Jhacarreiro/ai-server-commander/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-AI Server Commander is a self-hosted control plane that lets approved AI assistant clients use bounded capabilities on machines and authenticated local services you control. Its production core today is terminal execution; the project is designed to grow through optional capability adapters without turning client-specific behavior into core infrastructure. OpenAI/ChatGPT and Anthropic/Claude are first-class client families; additional clients and protocols are welcome when they do not compromise functionality, reliability, or performance for those two.
+AI Server Commander is a self-hosted bridge that lets approved AI assistant clients run bounded terminal commands on a machine you control. OpenAI/ChatGPT and Anthropic/Claude are first-class client families; additional clients and protocols are welcome when they do not compromise functionality, reliability, or performance for those two.
 
 It exposes the same execution core through two primary client adapters:
 
 - **REST/OpenAPI** for ChatGPT Custom GPT Actions and automation clients.
 - **Remote MCP + OAuth** for Claude and other MCP-capable clients.
 
-The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.0.8 the production capability is the bounded host command executor.
-
-The longer-term direction is broader than terminal access: Commander should remain a small, auditable control plane that can expose typed capabilities such as read-only filesystem operations, remote-host adapters and browser/session automation while keeping authentication, policy, activity state and client transports at clear boundaries. A future mobile or chat UI should consume these capabilities rather than become a dependency of the core server.
+The server does not provide model access or credits. It receives authenticated tool calls, applies local policy and limits, executes the requested command on the host, and returns a structured result.
 
 > [!CAUTION]
 > AI Server Commander can execute real shell commands with the permissions of its operating-system user. It is **not a sandbox**. Run it as a dedicated unprivileged user, keep it behind HTTPS, enable `SAFE_MODE`, and expose it only to clients and users you trust.
@@ -50,8 +48,6 @@ Claude / remote MCP client          ├── shared bounded executor ── hos
                                                    ├── activity log
                                                    └── notices
 ```
-
-That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. Planned examples include policy-aware read-only tools and an authenticated browser/session adapter for observing explicitly selected web conversations.
 
 See [docs/architecture.md](./docs/architecture.md) for request flows, trust boundaries and the module map.
 
@@ -192,6 +188,8 @@ Content-Type: application/json
   "maxOutputChars": 12000
 }
 ```
+
+Command execution accepts GET and POST only. Express would otherwise route `HEAD` onto the GET handler (RFC 9110 §9.2.1) and run `?command=` payloads from `curl -I`, link-checkers and uptime probes. `HEAD /api/runTerminalScript` now returns `405` with `Allow: GET, POST` and does not parse or execute. Documented GET/POST clients are unchanged. Monitors that treated a `200` from `HEAD` on the execute URL as liveness should switch to GET or POST, or probe a non-execute URL such as `/openapi.json`.
 
 ## Remote MCP clients
 
@@ -374,6 +372,7 @@ The smoke suite covers:
 
 - bounded executor behavior;
 - REST GET/POST compatibility;
+- HEAD rejection on execute routes without running the command;
 - multi-line scripts and request-size limits;
 - invalid working directories;
 - concurrency and targeted interruption;
@@ -398,6 +397,10 @@ Confirm that every release uses the same `OAUTH_STATE_PATH` and that the service
 ### The MCP client disconnects during initialize
 
 The server only implements MCP protocol version `2025-03-26` and always returns that version from `initialize`. A client that cannot continue on `2025-03-26` is expected to disconnect. Confirm the client supports that version rather than expecting the server to echo an older or newer request.
+
+### A HEAD probe of the execute URL returns 405
+
+That is expected. `/api/runTerminalScript` and `/v1/commands/execute` accept GET and POST only. Previous `HEAD` probes could return `200` after silently running `?command=`. Use GET or POST to execute, or probe `/openapi.json` for liveness.
 
 ### A command runs in the wrong directory
 
