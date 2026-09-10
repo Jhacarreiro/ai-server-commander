@@ -105,7 +105,16 @@ function executeBounded(options) {
             ].join('').trim();
 
             const outputTruncated = output.length > effectiveMaxOutput;
-            const limitedOutput = outputTruncated ? output.slice(0, effectiveMaxOutput) : output;
+            // Never cut inside a UTF-16 surrogate pair: a lone surrogate in
+            // the JSON response breaks downstream UTF-8 consumers
+            // ("surrogates not allowed" in Python clients).
+            let limitedOutput = output;
+            if (outputTruncated) {
+                let cut = effectiveMaxOutput;
+                const hi = output.charCodeAt(cut - 1);
+                if (hi >= 0xD800 && hi <= 0xDBFF) cut -= 1;
+                limitedOutput = output.slice(0, cut);
+            }
             const exitCode = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
 
             resolve({

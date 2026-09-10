@@ -15,7 +15,21 @@ const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 function ensureRuntimeDir() { ensureDir(runtimeDir); ensureDir(activityRoot); ensureDir(path.join(activityRoot, 'conversations')); ensureDir(path.join(activityRoot, 'tasks')); }
 function redact(value) { return String(value || '').replace(SECRET_PATTERN, '[REDACTED]'); }
-function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw; const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? text.slice(0, max) + '…' : text; }
+function preview(value, max = MAX_TEXT) {
+    const raw = String(value || '');
+    const sampleLimit = Math.max(max * 8, 4096);
+    const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw;
+    const text = redact(sample).replace(/\s+/g, ' ').trim();
+    if (raw.length > sample.length || text.length > max) {
+        // Avoid splitting a UTF-16 surrogate pair (lone surrogates break
+        // UTF-8 consumers of the activity log).
+        let cut = max;
+        const hi = text.charCodeAt(cut - 1);
+        if (hi >= 0xD800 && hi <= 0xDBFF) cut -= 1;
+        return text.slice(0, cut) + '…';
+    }
+    return text;
+}
 function hashText(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12); }
 function safeId(value, fallback = 'unknown') { const raw = String(value || '').trim() || fallback; const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback; return safe.length < raw.length || safe !== raw ? `${safe}_${hashText(raw)}`.slice(0, 96) : safe; }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
