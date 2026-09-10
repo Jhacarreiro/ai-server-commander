@@ -4,16 +4,14 @@
 [![Release](https://img.shields.io/github/v/release/Jhacarreiro/ai-server-commander)](https://github.com/Jhacarreiro/ai-server-commander/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-AI Server Commander is a self-hosted control plane that lets approved AI assistant clients use bounded capabilities on machines and authenticated local services you control. Its production core today is terminal execution; the project is designed to grow through optional capability adapters without turning client-specific behavior into core infrastructure. OpenAI/ChatGPT and Anthropic/Claude are first-class client families; additional clients and protocols are welcome when they do not compromise functionality, reliability, or performance for those two.
+AI Server Commander is a self-hosted bridge that lets approved AI assistant clients run bounded terminal commands on a machine you control. OpenAI/ChatGPT and Anthropic/Claude are first-class client families; additional clients and protocols are welcome when they do not compromise functionality, reliability, or performance for those two.
 
 It exposes the same execution core through two primary client adapters:
 
 - **REST/OpenAPI** for ChatGPT Custom GPT Actions and automation clients.
 - **Remote MCP + OAuth** for Claude and other MCP-capable clients.
 
-The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.0.8 the production capability is the bounded host command executor.
-
-The longer-term direction is broader than terminal access: Commander should remain a small, auditable control plane that can expose typed capabilities such as read-only filesystem operations, remote-host adapters and browser/session automation while keeping authentication, policy, activity state and client transports at clear boundaries. A future mobile or chat UI should consume these capabilities rather than become a dependency of the core server.
+The server does not provide model access or credits. It receives authenticated tool calls, applies local policy and limits, executes the requested command on the host, and returns a structured result.
 
 > [!CAUTION]
 > AI Server Commander can execute real shell commands with the permissions of its operating-system user. It is **not a sandbox**. Run it as a dedicated unprivileged user, keep it behind HTTPS, enable `SAFE_MODE`, and expose it only to clients and users you trust.
@@ -50,8 +48,6 @@ Claude / remote MCP client          ├── shared bounded executor ── hos
                                                    ├── activity log
                                                    └── notices
 ```
-
-That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. Planned examples include policy-aware read-only tools and an authenticated browser/session adapter for observing explicitly selected web conversations.
 
 See [docs/architecture.md](./docs/architecture.md) for request flows, trust boundaries and the module map.
 
@@ -94,6 +90,7 @@ Minimal configuration:
 ```json
 {
   "port": 3000,
+  "host": "127.0.0.1",
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-with-a-long-random-secret",
   "mcpToken": "replace-with-a-separate-long-random-secret"
@@ -133,6 +130,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | Key | Required | Purpose |
 |---|---:|---|
 | `port` | Yes | Local TCP port used by the Node server. |
+| `host` | Yes | Address the Node server binds. Use `127.0.0.1` behind a same-host reverse proxy. Use `0.0.0.0` or `::` only when clients or a remote proxy must reach the process directly. IPv6 literals such as `::1` are accepted. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
@@ -140,6 +138,8 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
 
 LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency chain could not be updated safely. Existing configurations with `useLocalTunnel: true` now fail with migration guidance. Use a maintained HTTPS reverse proxy or tunnel and set `productionDomain` explicitly.
+
+`host` is required. Earlier releases omitted it and bound all interfaces. Configurations that still omit `host` now fail at startup instead of silently switching to loopback. Set `"host": "127.0.0.1"` for the recommended same-host reverse-proxy topology, or `"host": "0.0.0.0"` / `"host": "::"` only if you intend to accept connections on every interface. Interactive setup writes `127.0.0.1`.
 
 ### Environment variables
 
@@ -390,6 +390,10 @@ CI runs checks on supported Node versions for every push and pull request.
 ### Public URLs use `http://` or the wrong hostname
 
 Set `productionDomain` to the exact external HTTPS origin and forward `Host` and `X-Forwarded-Proto` from the reverse proxy.
+
+### The server is unreachable after an upgrade
+
+Startup now requires `host`. If `config.json` still omits it, the process fails with migration guidance instead of binding all interfaces. Add `"host": "127.0.0.1"` when a same-host reverse proxy forwards to the Node process. Add `"host": "0.0.0.0"` or `"host": "::"` only when a remote client or proxy must connect to the listen socket directly.
 
 ### The MCP client asks to reconnect after an upgrade or restart
 

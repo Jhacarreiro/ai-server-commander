@@ -19,6 +19,7 @@ let server = null;
 
 fs.writeFileSync(configPath, JSON.stringify({
     port,
+    host: '127.0.0.1',
     useLocalTunnel: false,
     productionDomain: `http://127.0.0.1:${port}`,
     authToken,

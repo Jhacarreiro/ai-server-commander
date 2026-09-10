@@ -12,7 +12,7 @@ let server;
 
 function writeTestConfig() {
   if (fs.existsSync(configPath)) fs.copyFileSync(configPath, backupPath);
-  fs.writeFileSync(configPath, JSON.stringify({ port, useLocalTunnel: false, productionDomain: `http://localhost:${port}`, authToken: token, localTunnelSubdomain: null }, null, 2) + '\n');
+  fs.writeFileSync(configPath, JSON.stringify({ port, host: '127.0.0.1', useLocalTunnel: false, productionDomain: `http://localhost:${port}`, authToken: token, localTunnelSubdomain: null }, null, 2) + '\n');
 }
 function restoreConfig() {
   if (fs.existsSync(backupPath)) { fs.copyFileSync(backupPath, configPath); fs.unlinkSync(backupPath); }

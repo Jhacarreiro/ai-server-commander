@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketSetup = require('./socketSetup');
-const { configPromise } = require('./configHandler');
+const { configPromise, formatListenUrl } = require('./configHandler');
 const { openapiSpecification, setURL } = require('./swaggerSetup');
 const {addApi} = require("./apiRoutes");
 const {log, getLog} = require("./logger");
@@ -94,8 +94,8 @@ const htmlContent = marked.parse(data);
         console.error('Failed to start server:', error && error.message ? error.message : error);
         process.exit(1);
     });
-    server.listen(config.port, () => {
-        log('Server running on http://localhost:' + config.port);
+    server.listen(config.port, config.host, () => {
+        log('Server running on ' + formatListenUrl(config.host, config.port));
         setURL(serverUrl);
     });
     return server;
