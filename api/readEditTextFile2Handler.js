@@ -21,6 +21,21 @@ const {
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
 
+// Reject non-strings before any string method (Express represents repeated
+// query parameters as an array). Resolve and bound-check so ../ traversal
+// and sibling-prefix paths cannot escape the workspace.
+const resolveWorkspaceFilePath = ( filePath, currentDir ) => {
+    if ( typeof filePath !== 'string' || !filePath.trim() ) {
+        return { error: 'File path is required.', status: 400 };
+    }
+    const workspaceRoot = path.resolve( currentDir );
+    const resolvedPath = path.resolve( workspaceRoot, filePath );
+    if ( resolvedPath !== workspaceRoot && !resolvedPath.startsWith( workspaceRoot + path.sep ) ) {
+        return { error: 'File path is outside the workspace directory.', status: 400 };
+    }
+    return { filePath: resolvedPath };
+};
+
 const replaceTextInSection = async ( filePath, replacements ) => {
     let fileHandle;
     let fileContent = '';
@@ -131,20 +146,30 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
     if ( req.method === 'GET' ) {
         filePath = req.query.filePath; // Get the file path from query parameters
-        body = {
-            filePath
-        }; // Mimic the structure expected by replaceTextInSection
     } else if ( req.method === 'POST' ) {
         body = (typeof req.body === 'object' && req.body !== null) ? req.body : {};
         filePath = body.filePath;
     }
 
     const currentDir = await getCurrentDirectory();
-    if ( typeof filePath !== 'string' || !filePath.trim() ) {
-        return res.status( 400 ).json( { error: 'File path is required.' } );
+    const resolved = resolveWorkspaceFilePath( filePath, currentDir );
+    if ( resolved.error ) {
+        return res.status( resolved.status ).json( { error: resolved.error } );
     }
-    if ( !filePath.startsWith( currentDir ) ) {
-        filePath = currentDir + '/' + filePath;
+    filePath = resolved.filePath;
+
+    if ( req.method === 'GET' ) {
+        // GET is a READ: return the file content as-is. It must not create
+        // the file, mint access tokens, or beautify-rewrite it (a read that
+        // permanently reformats the user's file destroys minified/custom
+        // formatting).
+        try {
+            const content = await fs.promises.readFile( filePath, 'utf8' );
+            res.type( 'text/plain' ).send( `File content:\n${content}` );
+        } catch ( err ) {
+            res.status(404).json({ error: 'File not found or unreadable.' });
+        }
+        return;
     }
 
     let replaceResult;
@@ -164,17 +189,19 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
+        // Mint ONE token and reuse it: createToken rotates (revokes the
+        // prior token for the file), so a second mint would invalidate the
+        // first URL in the very same response.
         const url = createToken( getURL, filePath );
         let responseMessage = `
         File url: ${url}
-        Changed diff url: ${createToken(getURL, filePath)}?diff=1`;
+        Changed diff url: ${url}?diff=1`;
 
         if ( replaceResult.fuzzyReplacements.length > 0 ) {
             responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
         }
 
         if ( filePath.endsWith( '.js' ) ) {
-            debugger;
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
                 await fs.promises.writeFile( filePath, replaceResult.originalContent );
