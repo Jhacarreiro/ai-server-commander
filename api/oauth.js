@@ -238,7 +238,14 @@ ${hidden}
             if (!body.code_verifier || sha256Base64Url(body.code_verifier) !== codeData.code_challenge) {
                 return sendJson(res, { error: 'invalid_grant', error_description: 'PKCE verification failed.' }, 400);
             }
-            return sendJson(res, issueTokenPair(store, clientId, codeData, null, body.code));
+            try {
+                return sendJson(res, issueTokenPair(store, clientId, codeData, null, body.code));
+            } catch (error) {
+                if (/already consumed|already rotated or revoked/i.test(error && error.message)) {
+                    return sendJson(res, { error: 'invalid_grant' }, 400);
+                }
+                throw error;
+            }
         }
 
         if (body.grant_type === 'refresh_token') {
@@ -247,7 +254,14 @@ ${hidden}
                 if (refreshData) store.deleteRefreshToken(body.refresh_token);
                 return sendJson(res, { error: 'invalid_grant' }, 400);
             }
-            return sendJson(res, issueTokenPair(store, clientId, refreshData, body.refresh_token));
+            try {
+                return sendJson(res, issueTokenPair(store, clientId, refreshData, body.refresh_token));
+            } catch (error) {
+                if (/already consumed|already rotated or revoked/i.test(error && error.message)) {
+                    return sendJson(res, { error: 'invalid_grant' }, 400);
+                }
+                throw error;
+            }
         }
 
         return sendJson(res, { error: 'unsupported_grant_type' }, 400);
