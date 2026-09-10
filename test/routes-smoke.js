@@ -1,7 +1,9 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
+const exitApplicationHandler = require('../api/exitApplicationHandler');
 
 const root = path.resolve(__dirname, '..');
 const port = Number(process.env.TEST_PORT || 33099);
@@ -111,6 +113,7 @@ function assert(condition, label, details = '') {
   fs.rmSync(logPath, { force: true });
   const out = fs.openSync(logPath, 'a');
   server = spawn('node', ['main.js'], { cwd: root, stdio: ['ignore', out, out] });
+  let trapPid = 0;
   try {
     await waitForServer(logPath);
     let r = await request('GET', '/api/runTerminalScript?command=printf%20hello_get');
@@ -162,7 +165,44 @@ function assert(condition, label, details = '') {
     r = await request('GET', '/api/server-url');
     assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
 
+    const trapPidFile = path.join(os.tmpdir(), 'asc-live-restart-' + process.pid + '.pid');
+    try { fs.unlinkSync(trapPidFile); } catch { /* ignore */ }
+    const trapCmd = 'trap "" TERM; echo $$ > "' + trapPidFile + '"; while true; do sleep 1; done';
+    const hung = request('POST', '/v1/commands/execute', {
+      mode: 'inline',
+      command: trapCmd,
+      timeoutMs: 30000,
+      shell: '/bin/sh'
+    }).catch(() => ({ status: 0, body: { dropped: true } }));
+    const waitUntil = Date.now() + 4000;
+    while (Date.now() < waitUntil && !trapPid) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      try { trapPid = parseInt(fs.readFileSync(trapPidFile, 'utf8').trim(), 10) || 0; } catch { trapPid = 0; }
+    }
+    let trapAliveBefore = false;
+    try { process.kill(trapPid, 0); trapAliveBefore = true; } catch { trapAliveBefore = false; }
+    assert(trapPid > 0 && trapAliveBefore, 'live restart command started', String(trapPid));
+
+    const restartStarted = Date.now();
+    r = await request('POST', '/api/restart');
+    assert(r.status === 200 && r.body && r.body.message, 'POST /api/restart accepted', JSON.stringify(r.body));
+    await new Promise((resolve) => setTimeout(resolve, exitApplicationHandler.RESTART_EXIT_DELAY_MS + 400));
+    await hung;
+    let trapAliveAfter = false;
+    try { process.kill(trapPid, 0); trapAliveAfter = true; } catch { trapAliveAfter = false; }
+    const restartElapsed = Date.now() - restartStarted;
+    const restartResult = trapAliveAfter ? 'ORPHANED' : 'CLEANED';
+    console.log('restart-evidence command_pid=' + trapPid +
+      ' before=' + (trapAliveBefore ? 'alive' : 'dead') +
+      ' after=' + (trapAliveAfter ? 'alive' : 'gone') +
+      ' elapsed_ms=' + restartElapsed +
+      ' result=' + restartResult);
+    assert(!trapAliveAfter, 'detached command is gone after /api/restart', 'pid=' + trapPid);
+    try { fs.unlinkSync(trapPidFile); } catch { /* ignore */ }
   } finally {
+    if (trapPid) {
+      try { process.kill(trapPid, 'SIGKILL'); } catch { /* already gone */ }
+    }
     if (server) server.kill('SIGTERM');
     restoreConfig();
   }
