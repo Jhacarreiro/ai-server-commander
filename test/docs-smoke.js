@@ -12,10 +12,10 @@ const requiredReadmeSections = [
     '## Remote MCP clients', '## Security model', '## Testing', '## Troubleshooting'
 ];
 const privateMarkers = [
-    /gpt-terminal\.gallivanter/i,
     /192\.168\.\d+\.\d+/,
-    /\/home\/AIcenas/,
-    /joaocarreiro@gmail/i
+    /\/home\/[^/\s]+\/(?:\.docker|workspace|projects)\//i,
+    /\b[a-z0-9-]+\.(?:lan|localdomain)\b/i,
+    /\b(?:nas|gateway|server)-[a-z0-9-]+\.internal\b/i
 ];
 
 function assert(condition, label, details = '') {
