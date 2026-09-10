@@ -36,7 +36,6 @@ async function handleSentenceVectors(req, res) {
 
     try {
         const results = await getSentenceVectors(text);
-        log(results);
         res.status(200).send(results);
     } catch (error) {
         res.status(500).send({ error: "Failed to process the request." });

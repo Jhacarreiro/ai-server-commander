@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const socketSetup = require('./socketSetup');
 const { configPromise } = require('./configHandler');
 const { openapiSpecification, setURL } = require('./swaggerSetup');
 const {addApi} = require("./apiRoutes");
