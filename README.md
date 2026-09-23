@@ -285,6 +285,30 @@ curl -sS \
 }
 ```
 
+### Reliable client workflow
+
+Treat terminal execution as a sequence of bounded operations rather than one large request:
+
+1. probe the current state;
+2. stage a patch or temporary script when a change is complex;
+3. execute the mutation with a short command;
+4. validate syntax or schema;
+5. run targeted tests;
+6. run broader tests only when needed.
+
+For multi-file changes, logical atomicity matters more than one-request-per-file: stage the complete patch or helper script, apply it once, then validate in separate calls.
+
+If a transport, reverse-proxy, or WAF error occurs after a mutating request, do **not** automatically resend the same payload. The request may have reached the origin even when the client did not receive the response. Probe state with a small read-only request first, then continue from the observed state.
+
+Clients should also:
+
+- avoid very large inline heredocs or JSON-encoded scripts when a staged file/script is practical;
+- keep execution separate from staging so a retry does not resend large content;
+- bound output at the source with targeted `tail`, `grep`, or equivalent filters;
+- collapse proxy/WAF HTML error pages into a short transport error instead of feeding the whole page back to the model.
+
+A proxy-generated WAF page can be produced before the request reaches AI Server Commander, so normalization of that page belongs in the client/action layer rather than in the Commander origin.
+
 ### Interrupt a command
 
 When exactly one command is active:
