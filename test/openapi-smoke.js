@@ -51,9 +51,11 @@ function assert(cond, label, details='') { if (!cond) throw new Error(label + (d
     assert(spec.info.version === packageVersion, 'OpenAPI version matches package', spec.info.version);
     assert(paths['/api/runTerminalScript'] && paths['/api/runTerminalScript'].get && paths['/api/runTerminalScript'].post, 'OpenAPI has GET/POST /api/runTerminalScript');
     assert(paths['/v1/commands/execute'] && paths['/v1/commands/execute'].post, 'OpenAPI has POST /v1/commands/execute');
+    assert(paths['/v1/commands/operations/{operationId}'] && paths['/v1/commands/operations/{operationId}'].get, 'OpenAPI has operation status probe');
     assert(spec.components && spec.components.schemas && spec.components.schemas.CommandResponse, 'OpenAPI has command schemas');
     const responseProperties = spec.components.schemas.CommandResponse.properties;
     assert(responseProperties.activityId && responseProperties.interrupted, 'OpenAPI has activity and interruption fields');
+    assert(responseProperties.operationId && responseProperties.operationState && responseProperties.replayed, 'OpenAPI has operation recovery fields');
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();

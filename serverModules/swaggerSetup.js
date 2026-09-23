@@ -18,7 +18,8 @@ const options = {
                         mode: { type: 'string', enum: ['inline'], default: 'inline' },
                         cwd: { type: 'string', description: 'Working directory' },
                         timeoutMs: { type: 'integer', description: 'Timeout in ms' },
-                        maxOutputChars: { type: 'integer', description: 'Max output characters' }
+                        maxOutputChars: { type: 'integer', description: 'Max output characters' },
+                        operationId: { type: 'string', description: 'Optional idempotency key for safe retry/recovery' }
                     },
                     required: ['command']
                 },
@@ -30,7 +31,8 @@ const options = {
                         shell: { type: 'string', description: 'Shell path, e.g. /bin/sh' },
                         cwd: { type: 'string', description: 'Working directory' },
                         timeoutMs: { type: 'integer', description: 'Timeout in ms' },
-                        maxOutputChars: { type: 'integer', description: 'Max output characters' }
+                        maxOutputChars: { type: 'integer', description: 'Max output characters' },
+                        operationId: { type: 'string', description: 'Optional idempotency key for safe retry/recovery' }
                     },
                     required: ['mode', 'script']
                 },
@@ -39,6 +41,9 @@ const options = {
                     properties: {
                         message: { type: 'string' },
                         activityId: { type: 'string' },
+                        operationId: { type: 'string' },
+                        operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown'] },
+                        replayed: { type: 'boolean' },
                         output: { type: 'string' },
                         exitCode: { type: ['integer', 'null'] },
                         timedOut: { type: 'boolean' },
@@ -105,7 +110,14 @@ openapiSpecification.paths = {
         post: {
             summary: 'Execute an inline command or script envelope',
             requestBody: commandRequestBody,
-            responses: { '200': commandResponse, '400': { description: 'Invalid request' }, '413': { description: 'Request body too large' } }
+            responses: { '200': commandResponse, '202': commandResponse, '400': { description: 'Invalid request' }, '409': commandResponse, '413': { description: 'Request body too large' } }
+        }
+    },
+    '/v1/commands/operations/{operationId}': {
+        get: {
+            summary: 'Probe the state of a previously submitted idempotent operation',
+            parameters: [{ name: 'operationId', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { '200': { description: 'Operation status' }, '400': { description: 'Invalid operationId' } }
         }
     }
 };

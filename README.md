@@ -189,7 +189,8 @@ Content-Type: application/json
   "command": "pwd && hostname",
   "cwd": "/srv/project",
   "timeoutMs": 45000,
-  "maxOutputChars": 12000
+  "maxOutputChars": 12000,
+  "operationId": "deploy-config-2026-09-23T0945Z"
 }
 ```
 
@@ -284,6 +285,21 @@ curl -sS \
   "notices": []
 }
 ```
+
+### Idempotent recovery with `operationId`
+
+For mutating POST requests, clients may provide an optional `operationId` (1-128 characters: letters, digits, `.`, `_`, `:`, `-`). Commander persists only a command fingerprint and bounded execution summary; it does not store stdout in the operation record.
+
+Reusing the same `operationId` with the same command never executes the command again. Reusing it with a different command returns HTTP `409`.
+
+After a lost transport response, probe the operation before deciding whether to retry:
+
+```http
+GET /v1/commands/operations/deploy-config-2026-09-23T0945Z
+Authorization: Bearer <authToken>
+```
+
+The returned state is one of `running`, `finished`, `indeterminate`, or `unknown`. `indeterminate` is deliberately conservative: Commander accepted the operation previously, but the current process cannot prove whether it completed, so the client should inspect target state rather than resubmit blindly.
 
 ### Interrupt a command
 

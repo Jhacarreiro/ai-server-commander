@@ -1,4 +1,4 @@
-const {terminalHandler, interruptHandler} = require('../api/terminal');
+const {terminalHandler, interruptHandler, operationStatusHandler} = require('../api/terminal');
 const {createNoticeHandler, pendingNoticesHandler, ackNoticeHandler} = require('../api/notices');
 const {activityHandler, activityStatusHandler, activityIndexHandler, activityContextHandler} = require('../api/activityLog');
 const createMcpHandler = require('../api/mcp');
@@ -46,6 +46,7 @@ module.exports = {
         app.get('/api/runTerminalScript', wrapAsync(terminalHandler));
         app.post('/api/runTerminalScript', wrapAsync(terminalHandler));
         app.post('/v1/commands/execute', wrapAsync(terminalHandler));
+        app.get('/v1/commands/operations/:operationId', wrapAsync(operationStatusHandler));
         app.get('/api/server-url', wrapAsync(require('../api/getServerUrlHandler')(getURL)));
         app.get('/api/logs', wrapAsync(require('../api/getLogsHandler')));
         app.get('/api/activity', wrapAsync(activityHandler));
