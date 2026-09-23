@@ -43,6 +43,9 @@ module.exports = function createMcpHandler() {
         properties: {
             message: { type: 'string' },
             activityId: { type: 'string' },
+            operationId: { type: 'string' },
+            operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown'] },
+            replayed: { type: 'boolean' },
             output: { type: 'string' },
             exitCode: { type: 'integer' },
             timedOut: { type: 'boolean' },
@@ -114,6 +117,10 @@ module.exports = function createMcpHandler() {
                     type: 'integer',
                     minimum: 1,
                     description: 'Requested output limit in characters, capped by server policy.'
+                },
+                operationId: {
+                    type: 'string',
+                    description: 'Optional idempotency key for safe retry/recovery.'
                 }
             },
             oneOf: [

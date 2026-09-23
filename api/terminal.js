@@ -11,10 +11,18 @@ const {
     SAFE_MODE,
     executeBounded,
     findBlockedPattern,
+    getActiveCommandIds,
     interruptCommand,
     positiveInteger,
     resolveCwd
 } = require('../serverModules/commandExecutor');
+const {
+    claimOperation,
+    fingerprintCommand,
+    finishOperation,
+    getOperationStatus,
+    validateOperationId
+} = require('../serverModules/commandOperations');
 
 function setCors(res) {
     res.setHeader('Access-Control-Allow-Origin', 'https://chat.openai.com');
@@ -69,6 +77,11 @@ function parseRequest(req) {
         return { error: true, status: 400, message: cwdResult.error };
     }
 
+    const operationResult = validateOperationId(options.operationId);
+    if (operationResult.error) {
+        return { error: true, status: 400, message: operationResult.error };
+    }
+
     return {
         mode,
         command: mode === 'script' ? null : command,
@@ -76,7 +89,8 @@ function parseRequest(req) {
         cwd: cwdResult.cwd,
         timeoutMs: positiveInteger(options.timeoutMs, COMMAND_TIMEOUT_MS),
         maxOutputChars: positiveInteger(options.maxOutputChars, MAX_OUTPUT_CHARS),
-        shell
+        shell,
+        operationId: operationResult.operationId
     };
 }
 
@@ -106,8 +120,87 @@ function quoteShellArg(value) {
 }
 
 async function executeCommand(parsed, activityContext = getActivityContext(null), source = 'rest') {
-    const { mode, command, script, cwd, timeoutMs, maxOutputChars, shell } = parsed;
+    const { mode, command, script, cwd, timeoutMs, maxOutputChars, shell, operationId } = parsed;
     const activityId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+    if (operationId) {
+        const fingerprint = fingerprintCommand(parsed);
+        let claim;
+        try {
+            claim = claimOperation({ operationId, fingerprint, activityId, mode });
+        } catch (error) {
+            console.error('[terminal] operation claim failed:', error.message);
+            return {
+                status: 500,
+                result: {
+                    message: 'Could not persist operation state; command was not executed.',
+                    activityId,
+                    operationId,
+                    operationState: 'unknown',
+                    replayed: false,
+                    output: '',
+                    exitCode: 1,
+                    timedOut: false,
+                    interrupted: false,
+                    blocked: false,
+                    outputTruncated: false,
+                    maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                    mode,
+                    notices: []
+                }
+            };
+        }
+
+        if (!claim.claimed) {
+            const status = getOperationStatus(operationId, getActiveCommandIds());
+            if (claim.conflict) {
+                return {
+                    status: 409,
+                    result: {
+                        message: 'operationId was already used for a different command.',
+                        activityId: status.activityId,
+                        operationId,
+                        operationState: status.state,
+                        replayed: true,
+                        output: '',
+                        exitCode: status.result ? status.result.exitCode : null,
+                        timedOut: status.result ? status.result.timedOut : false,
+                        interrupted: status.result ? status.result.interrupted : false,
+                        blocked: status.result ? status.result.blocked : false,
+                        outputTruncated: status.result ? status.result.outputTruncated : false,
+                        maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                        mode: status.mode || mode,
+                        notices: []
+                    }
+                };
+            }
+
+            const finished = status.state === 'finished';
+            return {
+                status: finished ? 200 : (status.state === 'running' ? 202 : 409),
+                result: {
+                    message: finished
+                        ? 'Operation already completed; command was not re-executed.'
+                        : (status.state === 'running'
+                            ? 'Operation is already running; command was not re-executed.'
+                            : 'Operation was previously accepted but completion is indeterminate; command was not re-executed.'),
+                    activityId: status.activityId,
+                    operationId,
+                    operationState: status.state,
+                    replayed: true,
+                    output: '',
+                    exitCode: status.result ? status.result.exitCode : null,
+                    timedOut: status.result ? status.result.timedOut : false,
+                    interrupted: status.result ? status.result.interrupted : false,
+                    blocked: status.result ? status.result.blocked : false,
+                    outputTruncated: status.result ? status.result.outputTruncated : false,
+                    maxOutputChars: Math.min(maxOutputChars, MAX_OUTPUT_CHARS),
+                    mode: status.mode || mode,
+                    notices: []
+                }
+            };
+        }
+    }
     const startedAtMs = Date.now();
     const payloadText = mode === 'script' ? script : command;
     const payloadHash = hashText(payloadText || '');
@@ -120,6 +213,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
         id: activityId,
         source,
         mode,
+        ...(operationId ? { operationId } : {}),
         commandHash: payloadHash,
         commandPreview: payloadPreview,
         payloadByteLength,
@@ -151,11 +245,22 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
+        let operationState = operationId ? 'finished' : null;
+        if (operationId) {
+            try {
+                finishOperation(operationId, { exitCode: 126, timedOut: false, interrupted: false, blocked: true, outputTruncated: false, mode });
+            } catch (error) {
+                operationState = 'indeterminate';
+                console.error('[terminal] operation finish failed:', error.message);
+            }
+        }
+
         return {
             status: 403,
             result: {
                 message: 'Command blocked by SAFE_MODE policy.',
                 activityId,
+                ...(operationId ? { operationId, operationState, replayed: false } : {}),
                 output: '',
                 exitCode: 126,
                 timedOut: false,
@@ -219,11 +324,29 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
         if (execution.interrupted) message = mode === 'script' ? 'Script interrupted.' : 'Command interrupted.';
         else if (execution.exitCode !== 0) message = mode === 'script' ? 'Script finished with error.' : 'Command finished with error.';
 
+        let operationState = operationId ? 'finished' : null;
+        if (operationId) {
+            try {
+                finishOperation(operationId, {
+                    exitCode: execution.exitCode,
+                    timedOut: execution.timedOut,
+                    interrupted: execution.interrupted,
+                    blocked: false,
+                    outputTruncated: execution.outputTruncated,
+                    mode
+                });
+            } catch (error) {
+                operationState = 'indeterminate';
+                console.error('[terminal] operation finish failed:', error.message);
+            }
+        }
+
         return {
             status: 200,
             result: {
                 message,
                 activityId,
+                ...(operationId ? { operationId, operationState, replayed: false } : {}),
                 output: execution.limitedOutput,
                 exitCode: execution.exitCode,
                 timedOut: execution.timedOut,
@@ -258,11 +381,22 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
+        let operationState = operationId ? 'finished' : null;
+        if (operationId) {
+            try {
+                finishOperation(operationId, { exitCode: 1, timedOut: false, interrupted: false, blocked: false, outputTruncated: false, mode });
+            } catch (finishError) {
+                operationState = 'indeterminate';
+                console.error('[terminal] operation finish failed:', finishError.message);
+            }
+        }
+
         return {
             status: 500,
             result: {
                 message: mode === 'script' ? 'Script execution failed.' : 'Command execution failed.',
                 activityId,
+                ...(operationId ? { operationId, operationState, replayed: false } : {}),
                 output: '',
                 exitCode: 1,
                 timedOut: false,
@@ -290,6 +424,16 @@ async function terminalHandler(req, res) {
     return res.status(outcome.status).json(outcome.result);
 }
 
+function operationStatusHandler(req, res) {
+    setCors(res);
+    const operationResult = validateOperationId(req.params && req.params.operationId);
+    if (operationResult.error || !operationResult.operationId) {
+        return res.status(400).json({ message: operationResult.error || 'operationId is required.' });
+    }
+    const status = getOperationStatus(operationResult.operationId, getActiveCommandIds());
+    return res.status(200).json({ ok: true, ...status });
+}
+
 function interruptHandler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed. Please use POST.' });
 
@@ -311,6 +455,7 @@ module.exports = {
     executeCommand,
     getCurrentDirectory,
     interruptHandler,
+    operationStatusHandler,
     parseRequest,
     terminalHandler
 };
