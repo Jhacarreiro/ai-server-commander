@@ -134,6 +134,22 @@ function assert(condition, label, details = '') {
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'exit 42', timeoutMs: 5000 });
     assert(r.status === 200 && r.body.exitCode === 42, 'exit code preserved', JSON.stringify(r.body));
 
+    const operationId = `routes-smoke-${process.pid}-${Date.now()}`;
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf operation_once', operationId, timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.output === 'operation_once' && r.body.operationId === operationId && r.body.replayed === false, 'operationId first execution', JSON.stringify(r.body));
+
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf operation_once', operationId, timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.replayed === true && r.body.operationState === 'finished' && r.body.output === '', 'operationId replay does not re-execute', JSON.stringify(r.body));
+
+    r = await request('GET', `/v1/commands/operations/${operationId}`);
+    assert(r.status === 200 && r.body.state === 'finished' && r.body.result.exitCode === 0, 'operation status probe', JSON.stringify(r.body));
+
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf different_payload', operationId, timeoutMs: 5000 });
+    assert(r.status === 409 && r.body.replayed === true, 'operationId cannot be reused for a different command', JSON.stringify(r.body));
+
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf invalid_operation', operationId: 'contains spaces' });
+    assert(r.status === 400, 'invalid operationId is rejected', JSON.stringify(r.body));
+
     r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'pwd', cwd: '/definitely/missing' });
     assert(r.status === 400, 'invalid cwd is rejected', JSON.stringify(r.body));
 
