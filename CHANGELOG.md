@@ -6,9 +6,21 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+Nothing yet.
+
+## [1.1.0] - 2026-09-24
+
+### Upgrade notes
+
+- Re-import the Custom GPT Action from `/openapi.json` so it picks up the new `operationId`s.
+- A `config.json` that still uses the example `authToken` or `mcpToken` no longer starts. Set fresh random values.
+- With systemd, use `Restart=always` (see `docs/deployment.md`); with `Restart=on-failure` the service stays down after `/api/restart`.
+- Clients that read `logPath` or `statusPath` from the activity endpoints, or send both `command` and `script`, need updating (see below).
+- Run production on Node 22 or 24. Node 20 still works but is end of life.
+- The new limits all have defaults; see the environment variable table in the README.
+
 ### Changed
 
-- Contributors: `npm test` runs every `test/*.js` file in turn (new files are picked up automatically), bounds each file by `TEST_TIMEOUT_MS`, stops a timed-out file together with any server it started, and ends with a per-file summary; `npm test -- <name>` runs a subset. `npm run check` syntax-checks every JavaScript file instead of a fixed list of 13. The per-file `test:*` scripts are removed. CI also runs on Node 24.
 - The published OpenAPI document matches the server: every operation has a unique `operationId` (the command operations had none, which the GPT Actions builder needs to expose them; `POST /api/runTerminalScript` is `runTerminalScript`), execute routes document all statuses they return (202, 403, 409, 429 and 500 included) with typed error and operation-status schemas, `GET /api/logs` documents its `{ logs }` envelope, and `/api/read-or-edit-file` documents its plain-text responses, request fields (`replacement`, `mergeText`) and 413/500 errors.
 - `port` must be a decimal integer from 1 to 65535. Values such as `3000abc` or `1e3` were silently parsed as 3000 and 1; an existing `config.json` with such a value keeps starting on the previously parsed port with a warning and is not rewritten. The first-run wizard asks again on invalid input instead of exiting, and Ctrl-D cancels it cleanly.
 - A configuration or startup error is reported as one `Failed to start server: ...` line with exit status 1 instead of an unhandled rejection and stack trace.
@@ -26,9 +38,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - Commands now run in their own process group (`exec()` had silently ignored `detached`). Timeouts and interrupts therefore reach pipelines and background children, and escalate from SIGTERM to SIGKILL after 1.5 seconds. Previously a timed-out pipeline such as `sleep 300 | cat` kept the request open until the pipeline ended on its own. Commands no longer inherit an open stdin, and output beyond the capture buffer stops the command instead of letting it run until the timeout.
 - At most `MAX_CONCURRENT_COMMANDS` (default 8) commands run at once; further requests get `429`.
 - `/api/read-or-edit-file` no longer leaves an empty file behind when an edit of a missing file fails, and never creates a file for a read. Creating a file with an empty `originalText` still works; a newly created file that fails the JavaScript syntax check is removed.
-- MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
-- An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
-- Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
+- Contributors: `npm test` runs every `test/*.js` file in turn (new files are picked up automatically), bounds each file by `TEST_TIMEOUT_MS`, stops a timed-out file together with any server it started, and ends with a per-file summary; `npm test -- <name>` runs a subset. `npm run check` syntax-checks every JavaScript file instead of a fixed list of 13. The per-file `test:*` scripts are removed. CI also runs on Node 24.
 
 ### Security
 
@@ -56,8 +66,33 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
-- Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
 - Added optional `operationId` idempotency keys for REST and MCP command execution, plus `GET /v1/commands/operations/{operationId}` to probe REST operations after a lost response. Records are scoped per adapter, expire after `COMMAND_OPERATION_TTL_SECONDS` (default 24 hours), and requests rejected before execution release their `operationId` (`operationState: "not_executed"`). An unreadable operation store fails closed instead of being reset.
+
+## [1.0.9] - 2026-08-22
+
+### Changed
+
+- MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
+- An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
+- Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
+
+### Fixed
+
+- A listen port that is already in use or needs privileges is reported with the port and the remedy instead of an unhandled error and stack trace.
+- MCP `tools/call` with array or primitive `arguments` returns `-32602` naming the type instead of a misleading "Command parameter is required" error.
+- POST command requests honor `cwd`, `timeoutMs` and `maxOutputChars` from the query string as fallbacks (the body wins), not only `command`.
+- A `config.json` saved with a UTF-8 BOM is accepted.
+- The MCP pre-shared token is accepted as `Authorization: Bearer <token>`, as standard MCP HTTP clients send it, in addition to `?token=`.
+- Browser CORS preflights (`OPTIONS`) are answered before authentication, so browser clients no longer fail on the preflight.
+- Malformed JSON bodies return `400` with `Invalid request body.` instead of `Internal server error.`.
+
+### Removed
+
+- Removed the unreachable `api/firebase.js` route factory.
+
+### Added
+
+- Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
 
 ## [1.0.8] - 2026-07-12
 
