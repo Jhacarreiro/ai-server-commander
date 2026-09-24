@@ -21,6 +21,7 @@ const {
     fingerprintCommand,
     finishOperation,
     getOperationStatus,
+    releaseOperation,
     validateOperationId
 } = require('../serverModules/commandOperations');
 
@@ -119,15 +120,27 @@ function quoteShellArg(value) {
     return "'" + String(value).replace(/'/g, "'\\''") + "'";
 }
 
+// The command never ran, so the operationId is given back for a clean retry.
+function releaseClaim(operationRef, activityId) {
+    try {
+        releaseOperation({ ...operationRef, activityId });
+        return 'not_executed';
+    } catch (error) {
+        console.error('[terminal] operation release failed:', error.message);
+        return 'indeterminate';
+    }
+}
+
 async function executeCommand(parsed, activityContext = getActivityContext(null), source = 'rest') {
     const { mode, command, script, cwd, timeoutMs, maxOutputChars, shell, operationId } = parsed;
     const activityId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const operationRef = operationId ? { scope: source, operationId } : null;
 
     if (operationId) {
         const fingerprint = fingerprintCommand(parsed);
         let claim;
         try {
-            claim = claimOperation({ operationId, fingerprint, activityId, mode });
+            claim = claimOperation({ ...operationRef, fingerprint, activityId, mode });
         } catch (error) {
             console.error('[terminal] operation claim failed:', error.message);
             return {
@@ -152,7 +165,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
         }
 
         if (!claim.claimed) {
-            const status = getOperationStatus(operationId, getActiveCommandIds());
+            const status = getOperationStatus(operationRef, getActiveCommandIds());
             if (claim.conflict) {
                 return {
                     status: 409,
@@ -245,15 +258,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
-        let operationState = operationId ? 'finished' : null;
-        if (operationId) {
-            try {
-                finishOperation(operationId, { exitCode: 126, timedOut: false, interrupted: false, blocked: true, outputTruncated: false, mode });
-            } catch (error) {
-                operationState = 'indeterminate';
-                console.error('[terminal] operation finish failed:', error.message);
-            }
-        }
+        const operationState = operationId ? releaseClaim(operationRef, activityId) : null;
 
         return {
             status: 403,
@@ -278,6 +283,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
     console.log(mode === 'inline' ? '[terminal] command: ' + command : '[terminal] script: ' + payloadByteLength + ' bytes');
 
     let scriptDir = null;
+    let executionSettled = false;
     try {
         let commandToRun = command;
         let executionShell = process.env.SHELL || '/bin/bash';
@@ -296,6 +302,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             timeoutMs,
             maxOutputChars
         });
+        executionSettled = true;
         const notices = getPendingNotices(activityContext);
 
         appendActivity({
@@ -327,7 +334,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
         let operationState = operationId ? 'finished' : null;
         if (operationId) {
             try {
-                finishOperation(operationId, {
+                finishOperation(operationRef, {
                     exitCode: execution.exitCode,
                     timedOut: execution.timedOut,
                     interrupted: execution.interrupted,
@@ -381,10 +388,13 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             shell: mode === 'script' ? shell : undefined
         }, activityContext);
 
-        let operationState = operationId ? 'finished' : null;
-        if (operationId) {
+        let operationState = null;
+        if (operationId && !executionSettled) {
+            operationState = releaseClaim(operationRef, activityId);
+        } else if (operationId) {
+            operationState = 'finished';
             try {
-                finishOperation(operationId, { exitCode: 1, timedOut: false, interrupted: false, blocked: false, outputTruncated: false, mode });
+                finishOperation(operationRef, { exitCode: 1, timedOut: false, interrupted: false, blocked: false, outputTruncated: false, mode });
             } catch (finishError) {
                 operationState = 'indeterminate';
                 console.error('[terminal] operation finish failed:', finishError.message);
@@ -430,7 +440,7 @@ function operationStatusHandler(req, res) {
     if (operationResult.error || !operationResult.operationId) {
         return res.status(400).json({ message: operationResult.error || 'operationId is required.' });
     }
-    const status = getOperationStatus(operationResult.operationId, getActiveCommandIds());
+    const status = getOperationStatus({ scope: 'rest', operationId: operationResult.operationId }, getActiveCommandIds());
     return res.status(200).json({ ok: true, ...status });
 }
 

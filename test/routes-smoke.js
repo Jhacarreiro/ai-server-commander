@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -110,7 +111,12 @@ function assert(condition, label, details = '') {
   writeTestConfig();
   fs.rmSync(logPath, { force: true });
   const out = fs.openSync(logPath, 'a');
-  server = spawn('node', ['main.js'], { cwd: root, stdio: ['ignore', out, out] });
+  const operationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-routes-operations-'));
+  server = spawn('node', ['main.js'], {
+    cwd: root,
+    env: { ...process.env, COMMAND_OPERATIONS_PATH: path.join(operationsDir, 'command-operations.json') },
+    stdio: ['ignore', out, out]
+  });
   try {
     await waitForServer(logPath);
     let r = await request('GET', '/api/runTerminalScript?command=printf%20hello_get');
@@ -135,11 +141,14 @@ function assert(condition, label, details = '') {
     assert(r.status === 200 && r.body.exitCode === 42, 'exit code preserved', JSON.stringify(r.body));
 
     const operationId = `routes-smoke-${process.pid}-${Date.now()}`;
-    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf operation_once', operationId, timeoutMs: 5000 });
+    const operationMarker = path.join(operationsDir, 'marker.txt');
+    const operationCommand = `printf x >> ${operationMarker} && printf operation_once`;
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: operationCommand, operationId, timeoutMs: 5000 });
     assert(r.status === 200 && r.body.output === 'operation_once' && r.body.operationId === operationId && r.body.replayed === false, 'operationId first execution', JSON.stringify(r.body));
 
-    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: 'printf operation_once', operationId, timeoutMs: 5000 });
-    assert(r.status === 200 && r.body.replayed === true && r.body.operationState === 'finished' && r.body.output === '', 'operationId replay does not re-execute', JSON.stringify(r.body));
+    r = await request('POST', '/v1/commands/execute', { mode: 'inline', command: operationCommand, operationId, timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.replayed === true && r.body.operationState === 'finished' && r.body.output === '', 'operationId replay is reported', JSON.stringify(r.body));
+    assert(fs.readFileSync(operationMarker, 'utf8') === 'x', 'operationId replay does not re-execute');
 
     r = await request('GET', `/v1/commands/operations/${operationId}`);
     assert(r.status === 200 && r.body.state === 'finished' && r.body.result.exitCode === 0, 'operation status probe', JSON.stringify(r.body));
@@ -181,6 +190,7 @@ function assert(condition, label, details = '') {
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
+    fs.rmSync(operationsDir, { recursive: true, force: true });
   }
 })().catch((err) => {
   if (server) server.kill('SIGTERM');

@@ -15,6 +15,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 ### Added
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
+- Added optional `operationId` idempotency keys for REST and MCP command execution, plus `GET /v1/commands/operations/{operationId}` to probe REST operations after a lost response. Records are scoped per adapter, expire after `COMMAND_OPERATION_TTL_SECONDS` (default 24 hours), and requests rejected before execution release their `operationId` (`operationState: "not_executed"`). An unreadable operation store fails closed instead of being reset.
 
 ## [1.0.8] - 2026-07-12
 

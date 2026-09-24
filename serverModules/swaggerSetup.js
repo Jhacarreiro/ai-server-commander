@@ -42,7 +42,7 @@ const options = {
                         message: { type: 'string' },
                         activityId: { type: 'string' },
                         operationId: { type: 'string' },
-                        operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown'] },
+                        operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown', 'not_executed'] },
                         replayed: { type: 'boolean' },
                         output: { type: 'string' },
                         exitCode: { type: ['integer', 'null'] },

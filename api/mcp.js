@@ -23,6 +23,15 @@ function commandToText(result) {
         `blocked: ${result.blocked}`,
         `outputTruncated: ${result.outputTruncated}`
     ];
+    // Clients that only read text content must still see that a replay did not run.
+    if (result.operationId) {
+        parts.push(
+            `operationId: ${result.operationId}`,
+            `operationState: ${result.operationState}`,
+            `replayed: ${result.replayed}`,
+            `message: ${result.message}`
+        );
+    }
     if (result.output) parts.push(`\noutput:\n${result.output}`);
     if (Array.isArray(result.notices) && result.notices.length) {
         parts.push(`\nnotices:\n${JSON.stringify(result.notices)}`);
@@ -44,10 +53,10 @@ module.exports = function createMcpHandler() {
             message: { type: 'string' },
             activityId: { type: 'string' },
             operationId: { type: 'string' },
-            operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown'] },
+            operationState: { type: 'string', enum: ['running', 'finished', 'indeterminate', 'unknown', 'not_executed'] },
             replayed: { type: 'boolean' },
             output: { type: 'string' },
-            exitCode: { type: 'integer' },
+            exitCode: { type: ['integer', 'null'] },
             timedOut: { type: 'boolean' },
             interrupted: { type: 'boolean' },
             blocked: { type: 'boolean' },
