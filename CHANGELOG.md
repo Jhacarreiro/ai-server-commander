@@ -8,6 +8,11 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- REST and MCP requests that supply both `command` and `script` are rejected (`400` / `-32602`) instead of silently running one of them.
+- REST requests with a `script` and no `mode` run in script mode, matching MCP. Inline commands and scripts share one default shell: `SHELL`, else `/bin/bash`, else `/bin/sh` (script mode previously fell back to `/bin/sh` while inline used `/bin/bash`).
+- A wrong-typed `command` or `script` is reported as a type error instead of "required", and a present `command` in the body is no longer replaced by `?command=`. Whitespace-only scripts are rejected.
+- MCP `tools/call` without a tool name returns `tool name is required`; an unknown tool is named in the error.
+- Truncated command output and activity previews never end in half of a UTF-16 surrogate pair, which strict JSON consumers reject.
 - `/api/restart` stops accepting connections and waits for in-flight responses before exiting, bounded by `RESTART_FORCE_EXIT_MS` (default 30 seconds), instead of exiting after a fixed 500 ms.
 - `/api/read-or-edit-file` no longer leaves an empty file behind when an edit of a missing file fails, and never creates a file for a read. Creating a file with an empty `originalText` still works; a newly created file that fails the JavaScript syntax check is removed.
 - MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
@@ -23,6 +28,8 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - OAuth and `.well-known` responses send `Cache-Control: no-store`.
 - Inline commands are logged through the redacting, length-bounded preview instead of verbatim.
 - File-edit error responses no longer include stack traces; the error message is kept.
+- `HEAD` on `/api/runTerminalScript` returns `405` with `Allow: GET, POST` instead of executing the `?command=` through the GET handler.
+- Inline commands are capped by `MAX_INLINE_COMMAND_BYTES` (default 64 KiB, `413` above it), notice text and source by `MAX_NOTICE_TEXT` / `MAX_NOTICE_SOURCE`, stored conversation/task identifiers by `MAX_ACTIVITY_FIELD`, and `/mcp` batches by `MAX_MCP_BATCH` (default 64).
 - `/api/read-or-edit-file` resolves paths (including symlinks) and rejects targets outside the workspace directory. `GET` is now a pure read that returns the raw file content without minting access tokens, syntax-checking, beautifying or rewriting the file.
 
 ### Removed

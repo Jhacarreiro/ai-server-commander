@@ -5,6 +5,8 @@ const { getPendingNotices } = require('./notices');
 const { appendActivity, preview, hashText, getActivityContext } = require('./activityLog');
 const {
     COMMAND_TIMEOUT_MS,
+    DEFAULT_SHELL,
+    MAX_INLINE_COMMAND_BYTES,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
     MAX_SHELL_BYTES,
@@ -43,25 +45,48 @@ function parseRequest(req) {
 
     let mode = 'inline';
     if (req.method !== 'GET') {
-        if (body.mode === 'script') mode = 'script';
+        // Same auto-detection as MCP: a script-only body means script mode.
+        if (!body.mode && typeof body.script === 'string') mode = 'script';
+        else if (body.mode === 'script') mode = 'script';
         else if (body.mode === 'inline' || !body.mode) mode = 'inline';
         else return { error: true, status: 400, message: 'Unknown mode: ' + body.mode + '. Supported: inline, script.' };
     }
 
-    const command = req.method === 'GET' ? query.command : (body.command || query.command);
+    // Only an absent body.command falls back to the query; a present but
+    // wrong-typed value must be reported, not silently replaced.
+    const command = req.method === 'GET' ? query.command : (body.command !== undefined ? body.command : query.command);
     const script = body.script;
 
-    if (mode === 'inline' && (typeof command !== 'string' || !command.trim())) {
-        return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+    // The schemas declare command and script as alternatives; picking one
+    // silently would hide a client bug behind a successful-looking run.
+    if (req.method !== 'GET' && typeof command === 'string' && command.trim() && typeof script === 'string' && script.trim()) {
+        return { error: true, status: 400, message: 'Provide either command or script, not both.' };
     }
-    if (mode === 'script' && (typeof script !== 'string' || !script)) {
-        return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
+
+    if (mode === 'inline') {
+        if (command === undefined || command === null || (typeof command === 'string' && !command.trim())) {
+            return { error: true, status: 400, message: 'Command parameter is required for inline mode.' };
+        }
+        if (typeof command !== 'string') {
+            return { error: true, status: 400, message: 'Command parameter must be a string, got ' + typeof command + '.' };
+        }
+        if (Buffer.byteLength(command, 'utf8') > MAX_INLINE_COMMAND_BYTES) {
+            return { error: true, status: 413, message: 'Inline command exceeds maximum of ' + MAX_INLINE_COMMAND_BYTES + ' bytes. Send larger payloads in script mode.' };
+        }
+    }
+    if (mode === 'script') {
+        if (script === undefined || script === null || (typeof script === 'string' && !script.trim())) {
+            return { error: true, status: 400, message: 'Script body is required for script mode and must be a string.' };
+        }
+        if (typeof script !== 'string') {
+            return { error: true, status: 400, message: 'Script body must be a string, got ' + typeof script + '.' };
+        }
     }
     if (mode === 'script' && Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BODY_BYTES) {
         return { error: true, status: 413, message: 'Script body exceeds maximum of ' + MAX_SCRIPT_BODY_BYTES + ' bytes.' };
     }
 
-    let shell = process.env.SHELL || '/bin/sh';
+    let shell = DEFAULT_SHELL;
     if (mode === 'script' && options.shell) {
         if (typeof options.shell !== 'string' || Buffer.byteLength(options.shell, 'utf8') > MAX_SHELL_BYTES) {
             return { error: true, status: 400, message: 'Shell path is invalid or too long.' };
@@ -286,7 +311,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
     let executionSettled = false;
     try {
         let commandToRun = command;
-        let executionShell = process.env.SHELL || '/bin/bash';
+        let executionShell = DEFAULT_SHELL;
         if (mode === 'script') {
             const created = createScriptFile(script);
             scriptDir = created.scriptDir;
@@ -426,6 +451,12 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
 async function terminalHandler(req, res) {
     setCors(res);
     if (req.method === 'OPTIONS') return res.status(200).end();
+    // Express routes HEAD to GET handlers; HEAD must never run a command
+    // (curl -I, link checkers and uptime probes would otherwise execute it).
+    if (req.method === 'HEAD') {
+        res.setHeader('Allow', 'GET, POST');
+        return res.status(405).json({ message: 'Method not allowed. Please use GET or POST.' });
+    }
 
     const parsed = parseRequest(req);
     if (parsed.error) return res.status(parsed.status).json({ message: parsed.message });

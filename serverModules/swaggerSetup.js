@@ -26,15 +26,15 @@ const options = {
                 ScriptRequest: {
                     type: 'object',
                     properties: {
-                        mode: { type: 'string', enum: ['script'] },
+                        mode: { type: 'string', enum: ['script'], default: 'script', description: 'Script mode. May be omitted when script is provided (auto-detected).' },
                         script: { type: 'string', description: 'Multi-line shell script body' },
-                        shell: { type: 'string', description: 'Shell path, e.g. /bin/sh' },
+                        shell: { type: 'string', description: 'Shell path, e.g. /bin/bash' },
                         cwd: { type: 'string', description: 'Working directory' },
                         timeoutMs: { type: 'integer', description: 'Timeout in ms' },
                         maxOutputChars: { type: 'integer', description: 'Max output characters' },
                         operationId: { type: 'string', description: 'Optional idempotency key for safe retry/recovery' }
                     },
-                    required: ['mode', 'script']
+                    required: ['script']
                 },
                 CommandResponse: {
                     type: 'object',

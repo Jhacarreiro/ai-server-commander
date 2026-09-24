@@ -53,7 +53,7 @@ function request(method, pathName, body, options = {}) {
       res.on('end', () => {
         let parsed = text;
         try { parsed = JSON.parse(text); } catch (_) {}
-        resolve({ status: res.statusCode, body: parsed });
+        resolve({ status: res.statusCode, headers: res.headers, body: parsed });
       });
     });
     req.on('timeout', () => req.destroy(new Error('request timeout')));
@@ -187,6 +187,26 @@ function assert(condition, label, details = '') {
     r = await request('GET', '/api/server-url');
     assert(r.status === 200, 'server still responds after malformed POST bodies', JSON.stringify(r.body));
 
+    r = await request('POST', '/api/runTerminalScript', { script: 'printf script_autodetect', timeoutMs: 5000 });
+    assert(r.status === 200 && r.body.output === 'script_autodetect' && r.body.mode === 'script', 'POST script-only body auto-detects script mode', JSON.stringify(r.body));
+
+    r = await request('POST', '/v1/commands/execute', { command: 'printf rest_both', script: 'printf script_both' });
+    assert(r.status === 400 && r.body.message === 'Provide either command or script, not both.', 'POST rejects both command and script', JSON.stringify(r.body));
+
+    const headProbe = path.join(operationsDir, 'head-probe');
+    r = await request('HEAD', '/api/runTerminalScript?command=' + encodeURIComponent('printf head > ' + headProbe));
+    assert(r.status === 405 && r.headers.allow === 'GET, POST', 'HEAD on the execute route is 405 with Allow: GET, POST', JSON.stringify({ status: r.status, allow: r.headers.allow }));
+    assert(!fs.existsSync(headProbe), 'HEAD does not execute the command');
+
+    r = await request('POST', '/api/notices', { text: 'x'.repeat(8192) });
+    assert(r.status === 200 || r.status === 201, 'notice text at 8192 characters is accepted', String(r.status));
+    r = await request('POST', '/api/notices', { text: 'x'.repeat(8193) });
+    assert(r.status === 400 && String(r.body.message).includes('8192'), 'notice text over 8192 characters is rejected', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'ok', source: 'x'.repeat(257) });
+    assert(r.status === 400 && String(r.body.message).includes('source'), 'notice source over 256 characters is rejected', JSON.stringify(r.body));
+    r = await request('POST', '/api/notices', { text: 'meta', conversationId: 'c'.repeat(4000), taskId: 't'.repeat(4000), taskTitle: 'n'.repeat(4000) });
+    const notice = r.body && r.body.notice;
+    assert((r.status === 200 || r.status === 201) && notice && notice.targetConversationId.length <= 256 && notice.targetTaskTitle.length <= 256, 'oversized notice metadata is truncated', JSON.stringify(r.body).slice(0, 300));
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
