@@ -4,6 +4,7 @@
 // - Symlinks inside the workspace that resolve outside it are rejected
 //   for both reads (GET) and writes (POST).
 // - validateConfig rejects the documented placeholder secrets.
+process.env.MAX_EDIT_FILE_BYTES = '4096';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -137,6 +138,61 @@ function mockRes() {
     const clientError = JSON.parse(hintRes.body.error);
     assert(hintRes.statusCode === 500 && /no conflict blocks were found/.test(clientError.message), 'error response keeps the actionable message');
     assert(!('stack' in clientError), 'error response does not include a stack trace');
+
+    // --- 7. Limits on edit requests ------------------------------------------
+    const bigFile = path.join(workDir, 'big.txt');
+    fs.writeFileSync(bigFile, 'b'.repeat(5000));
+    const bigEdit = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'big.txt', replacements: [{ originalText: 'b', replacementText: 'c' }] }, query: {} }, bigEdit);
+    assert(bigEdit.statusCode === 413 && fs.readFileSync(bigFile, 'utf8') === 'b'.repeat(5000), 'editing a file above MAX_EDIT_FILE_BYTES is refused', String(bigEdit.statusCode));
+    const bigRead = mockRes();
+    await handler({ method: 'GET', query: { filePath: 'big.txt' }, body: {} }, bigRead);
+    assert(bigRead.statusCode === 413, 'reading a file above MAX_EDIT_FILE_BYTES is refused');
+    const tooMany = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'notes.txt', replacements: Array.from({ length: 51 }, () => ({ originalText: 'a', replacementText: 'b' })) }, query: {} }, tooMany);
+    assert(tooMany.statusCode === 400 && /Too many replacements/.test(tooMany.body.error), 'more than MAX_REPLACEMENTS replacements are refused');
+    const notArray = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'notes.txt', replacements: { originalText: 'a' } }, query: {} }, notArray);
+    assert(notArray.statusCode === 400 && /must be an array/.test(notArray.body.error), 'replacements must be an array');
+
+    // --- 8. JavaScript formatting never changes behavior or drops a BOM ---------
+    const asiFile = path.join(workDir, 'asi.js');
+    const asiSource = 'function f() {\n  return\n  { a: 1 }\n}\nconst  x =1;\n';
+    fs.writeFileSync(asiFile, asiSource);
+    const asiEdit = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'asi.js', replacements: [{ originalText: 'const  x =1;', replacementText: 'const  x =2;' }] }, query: {} }, asiEdit);
+    assert(asiEdit.statusCode === null && fs.readFileSync(asiFile, 'utf8').includes('return\n  { a: 1 }'), 'a file with an ASI hazard is not reformatted', fs.readFileSync(asiFile, 'utf8'));
+    const bomFile = path.join(workDir, 'bom.mjs');
+    fs.writeFileSync(bomFile, '\uFEFFexport const  y =1;\n');
+    const bomEdit = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'bom.mjs', replacements: [{ originalText: 'y =1', replacementText: 'y =2' }] }, query: {} }, bomEdit);
+    const bomAfter = fs.readFileSync(bomFile, 'utf8');
+    assert(bomEdit.statusCode === null && bomAfter.charCodeAt(0) === 0xFEFF && bomAfter.includes('export const y = 2;'), '.mjs files are checked and formatted, keeping the BOM', JSON.stringify(bomAfter));
+    const badMjs = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'bom.mjs', replacements: [{ originalText: 'y = 2', replacementText: 'y = ' }] }, query: {} }, badMjs);
+    assert(badMjs.statusCode === 400 && fs.readFileSync(bomFile, 'utf8') === bomAfter, 'an .mjs edit with a syntax error is reverted');
+    const tsFile = path.join(workDir, 'typed.ts');
+    fs.writeFileSync(tsFile, 'export const n: number = 1;\n');
+    const tsEdit = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'typed.ts', replacements: [{ originalText: '= 1', replacementText: '= 2' }] }, query: {} }, tsEdit);
+    assert(tsEdit.statusCode === null && fs.readFileSync(tsFile, 'utf8') === 'export const n: number = 2;\n', 'TypeScript files are edited without a JavaScript syntax check');
+    const scriptFile = path.join(workDir, 'legacy.js');
+    fs.writeFileSync(scriptFile, 'with (Math) { var r = max(1, 2); }\n');
+    const scriptEdit = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'legacy.js', replacements: [{ originalText: 'max(1, 2)', replacementText: 'max(1, 3)' }] }, query: {} }, scriptEdit);
+    assert(scriptEdit.statusCode === null, 'classic scripts that are invalid as modules are accepted', String(scriptEdit.body).slice(0, 200));
+
+    // --- 9. One share link per successful edit; failed edits keep the old one --
+    const linkFile = path.join(workDir, 'link.txt');
+    fs.writeFileSync(linkFile, 'one\n');
+    const linked = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'link.txt', replacements: [{ originalText: 'one', replacementText: 'two' }] }, query: {} }, linked);
+    const urls = String(linked.body).match(/\/access\/[a-f0-9]+/g) || [];
+    assert(urls.length === 2 && urls[0] === urls[1], 'file url and diff url share one token', JSON.stringify(urls));
+    const failed = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'link.txt', replacements: [{ originalText: 'missing', replacementText: 'x' }] }, query: {} }, failed);
+    const liveTokens = JSON.parse(fs.readFileSync(tokenStorePath, 'utf8'));
+    assert(failed.statusCode === 400 && Object.keys(liveTokens).includes(urls[0].split('/access/')[1]), 'a failed edit does not revoke the existing share link');
 
     console.log('ALL read-edit smoke tests passed');
   } finally {

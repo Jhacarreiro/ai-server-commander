@@ -8,6 +8,9 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- `/api/read-or-edit-file` validates a whole batch before applying it: an empty `originalText` is only accepted as the initial content of a new or empty file, `null` values and malformed conflict blocks (missing `=======` or closing marker) are rejected, and conflict replacements may contain `=======`. Requests are limited by `MAX_REPLACEMENTS` and `MAX_EDIT_FILE_BYTES`, and fuzzy matching by `MAX_FUZZY_QUERY_CHARS` / `MAX_FUZZY_HAYSTACK_CHARS`.
+- JavaScript edits (`.js`, `.mjs`, `.cjs`) are syntax-checked as a module and, failing that, as a classic script. Formatting is skipped when js-beautify could change behavior (for example `return` followed by a newline) or produce invalid code, and a leading BOM is kept. TypeScript and JSX files are not syntax-checked.
+- An edit mints one share link, and only once it has been kept; failed edits no longer mint or revoke links.
 - REST and MCP requests that supply both `command` and `script` are rejected (`400` / `-32602`) instead of silently running one of them.
 - REST requests with a `script` and no `mode` run in script mode, matching MCP. Inline commands and scripts share one default shell: `SHELL`, else `/bin/bash`, else `/bin/sh` (script mode previously fell back to `/bin/sh` while inline used `/bin/bash`).
 - A wrong-typed `command` or `script` is reported as a type error instead of "required", and a present `command` in the body is no longer replaced by `?command=`. Whitespace-only scripts are rejected.
