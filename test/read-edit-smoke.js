@@ -194,6 +194,11 @@ function mockRes() {
     const liveTokens = JSON.parse(fs.readFileSync(tokenStorePath, 'utf8'));
     assert(failed.statusCode === 400 && Object.keys(liveTokens).includes(urls[0].split('/access/')[1]), 'a failed edit does not revoke the existing share link');
 
+    // --- 10. Error responses do not reveal absolute server paths ---------------
+    const missingGet = mockRes();
+    await handler({ method: 'GET', query: { filePath: 'no-such-file.txt' }, body: {} }, missingGet);
+    assert(missingGet.statusCode === 400 && /ENOENT/.test(missingGet.body) && !missingGet.body.includes(workDir), 'a read error names the failure without the absolute path', String(missingGet.body));
+
     console.log('ALL read-edit smoke tests passed');
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });

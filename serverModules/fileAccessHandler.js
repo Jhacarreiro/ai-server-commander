@@ -3,6 +3,7 @@ const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const {log} = require("../serverModules/logger");
+const { redactPaths } = require("./stringifyError");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
@@ -313,7 +314,7 @@ module.exports.retrieveFile = async (req, res) => {
             res.send(htmlDiff);
         } catch (error) {
             log('Error fetching Git diff:', error);
-            res.status(500).send('Error fetching Git diff: ' + error.message);
+            res.status(500).send('Error fetching Git diff: ' + redactPaths(error.message));
         }
     } else {
         // Read through one descriptor so the size check and the read see the
