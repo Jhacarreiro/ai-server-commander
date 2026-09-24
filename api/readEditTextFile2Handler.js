@@ -1,6 +1,6 @@
 const fs = require( 'fs' );
 const {
-    checkJavaScriptFile
+    checkJavaScriptContent
 } = require( '../serverModules/checkjs' );
 const beautify = require( 'js-beautify' ).js;
 const {
@@ -20,6 +20,33 @@ const {
     parseConflicts
 } = require( '../serverModules/fileEdit' );
 const path = require('node:path');
+
+const MAX_REPLACEMENTS = Math.max( 1, Number.parseInt( process.env.MAX_REPLACEMENTS || '50', 10 ) || 50 );
+const MAX_EDIT_FILE_BYTES = Math.max( 1024, Number.parseInt( process.env.MAX_EDIT_FILE_BYTES || String( 2 * 1024 * 1024 ), 10 ) || 2 * 1024 * 1024 );
+// JavaScript files that espree can parse. TypeScript and JSX are left alone:
+// they would fail the syntax check and every edit would be reverted.
+const JAVASCRIPT_FILE = /\.(?:js|mjs|cjs)$/i;
+// js-beautify joins lines after restricted productions, so `return\n{a: 1}`
+// becomes `return {a: 1}`: still valid, but it now returns the object instead
+// of undefined. Such files are written without reformatting.
+const ASI_HAZARD = /(?:^|[;{}\s])(?:return|break|continue|throw|yield)[ \t]*\r?\n|(?:\+\+|--)[ \t]*\r?\n/;
+
+const tooLarge = () => Object.assign(
+    new Error( `File exceeds MAX_EDIT_FILE_BYTES (${MAX_EDIT_FILE_BYTES}).` ),
+    { status: 413 }
+);
+
+// Beautify a JavaScript edit only when that cannot change its meaning or
+// break it; otherwise keep the content exactly as edited. A leading BOM is
+// preserved (js-beautify drops it).
+const formatJavaScript = async ( content ) => {
+    const hasBom = content.charCodeAt( 0 ) === 0xFEFF;
+    const source = hasBom ? content.slice( 1 ) : content;
+    if ( ASI_HAZARD.test( source ) ) return content;
+    const beautified = beautify( source, { indent_size: 2 } );
+    if ( ( await checkJavaScriptContent( beautified ) ).length > 0 ) return content;
+    return ( hasBom ? '\uFEFF' : '' ) + beautified;
+};
 
 // Resolve symlinks so a link inside the workspace cannot point at files
 // outside it. When the target does not exist yet (POST may create it),
@@ -51,6 +78,8 @@ const replaceTextInSection = async ( filePath, replacements ) => {
     const readOnly = !replacements || replacements.length === 0;
 
     try {
+        const stat = await fs.promises.stat( filePath );
+        if ( stat.size > MAX_EDIT_FILE_BYTES ) throw tooLarge();
         fileContent = await fs.promises.readFile( filePath, 'utf8' );
     } catch ( err ) {
         // Only a missing file may become a new one; any other read error must
@@ -210,6 +239,9 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     if ( req.method === 'GET' ) {
         let content;
         try {
+            if ( ( await fs.promises.stat( filePath ) ).size > MAX_EDIT_FILE_BYTES ) {
+                return res.status( 413 ).send( `File exceeds MAX_EDIT_FILE_BYTES (${MAX_EDIT_FILE_BYTES}). Read it in parts through the terminal instead.` );
+            }
             content = await fs.promises.readFile( filePath, 'utf8' );
         } catch ( error ) {
             console.error( error );
@@ -230,35 +262,20 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
                 throw new Error( 'mergeText was not empty, but no conflict blocks were found, they are checked using regex like this /<<<<<<< HEAD[\\s\\S]*?>>>>>>> [\\w-]+/g Check what you send and try again' )
             }
         } else {
+            if ( body.replacements !== undefined && !Array.isArray( body.replacements ) ) {
+                return res.status( 400 ).json( { error: 'replacements must be an array.' } );
+            }
             replacements = body.replacements || (body.replacement && [body.replacement]) || [];
+        }
+        if ( replacements.length > MAX_REPLACEMENTS ) {
+            return res.status( 400 ).json( { error: `Too many replacements (max ${MAX_REPLACEMENTS}).` } );
         }
 
         replaceResult = await replaceTextInSection( filePath, replacements );
 
-        const url = createToken( getURL, filePath );
-        let responseMessage = `
-        File url: ${url}
-        Changed diff url: ${createToken(getURL, filePath)}?diff=1`;
-
+        let responseMessage = '';
         if ( replaceResult.fuzzyReplacements.length > 0 ) {
-            responseMessage += `Fuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`
-        }
-
-        if ( filePath.endsWith( '.js' ) ) {
-            let issues = await checkJavaScriptFile( filePath );
-            if ( issues.length > 0 ) {
-                await revertEdit( filePath, replaceResult );
-                responseMessage += "\nError happened, explain it to user";
-                responseMessage += replaceResult.created
-                    ? "\nNew file was not kept"
-                    : "\nFile reverted to original form before changes";
-                responseMessage += '\nIssues found in the file: \n' + JSON.stringify( issues );
-                responseMessage += `\nFile content before change: ${replaceResult.originalContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
-                responseMessage += `\nFile content after change: ${replaceResult.updatedContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
-                log( 'responseMessage', responseMessage );
-                res.status( 400 ).send( responseMessage );
-                return;
-            }
+            responseMessage += `\nFuzzy replacements: ${replaceResult.fuzzyReplacements.join('\n')}`;
         }
 
         if ( replaceResult.unsuccessfulReplacements.length > 0 ) {
@@ -276,16 +293,33 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             return;
         }
 
-        if (filePath.endsWith('.js')) {
-            const beautifiedContent = beautify(replaceResult.updatedContent, {
-                indent_size: 2,
-                //space_in_paren: true
-            });
-            await fs.promises.writeFile(filePath, beautifiedContent);
-            responseMessage += `\nFile content: ${beautifiedContent}`;
-        } else {
-            responseMessage += `\nFile content: ${replaceResult.updatedContent || replaceResult.originalContent}`;
+        let finalContent = replaceResult.updatedContent;
+        if ( JAVASCRIPT_FILE.test( filePath ) ) {
+            const issues = await checkJavaScriptContent( finalContent );
+            if ( issues.length > 0 ) {
+                await revertEdit( filePath, replaceResult );
+                responseMessage += "\nError happened, explain it to user";
+                responseMessage += replaceResult.created
+                    ? "\nNew file was not kept"
+                    : "\nFile reverted to original form before changes";
+                responseMessage += '\nIssues found in the file: \n' + JSON.stringify( issues );
+                responseMessage += `\nFile content before change: ${replaceResult.originalContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
+                responseMessage += `\nFile content after change: ${replaceResult.updatedContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
+                log( 'responseMessage', responseMessage );
+                res.status( 400 ).send( responseMessage );
+                return;
+            }
+            finalContent = await formatJavaScript( finalContent );
+            if ( finalContent !== replaceResult.updatedContent ) await fs.promises.writeFile( filePath, finalContent );
         }
+
+        // Mint the share link only for an edit that was kept, and only once:
+        // createToken rotates, so a second call would revoke the first URL and
+        // a rejected edit must not revoke a link that is still in use.
+        const url = createToken( getURL, filePath );
+        responseMessage = `
+        File url: ${url}
+        Changed diff url: ${url}?diff=1` + responseMessage + `\nFile content: ${finalContent}`;
         res.type( 'text/plain' ).send( responseMessage );
     } catch ( error ) {
         console.error( error );
@@ -301,7 +335,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         };
         // TODO no such dir fix
         // fs.appendFileSync( path.join( __dirname, '../logs/http_error_responses.log' ), JSON.stringify( logData, null, 2 ) + '\n', 'utf8' );
-        res.status( 500 ).json( {
+        res.status( error.status || 500 ).json( {
             error: stringifyError( error )
         } );
     }
