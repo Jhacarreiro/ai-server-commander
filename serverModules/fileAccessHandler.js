@@ -8,13 +8,35 @@ const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 
 const tokenStorePath = path.join(__dirname, "../tokenStore.json");
+const TOKEN_TTL_MS = 10 * 60 * 1000;
+const MAX_ACCESS_FILE_BYTES = Math.max(1024, Number.parseInt(process.env.MAX_ACCESS_FILE_BYTES || String(8 * 1024 * 1024), 10) || 8 * 1024 * 1024);
+const MAX_TOKEN_STORE_ENTRIES = Math.max(16, Number.parseInt(process.env.MAX_TOKEN_STORE_ENTRIES || "500", 10) || 500);
 
-// Function to read the token store
+// A missing or unparseable expiry must count as expired: every comparison
+// against an Invalid Date is false, so such an entry would never expire.
+function isExpired(tokenInfo, now = Date.now()) {
+    const expiry = new Date(tokenInfo && tokenInfo.expiryDate).getTime();
+    return !Number.isFinite(expiry) || expiry < now;
+}
+
+// Function to read the token store. Unreadable files and malformed entries
+// (legacy or corrupt shapes) are dropped instead of crashing every request;
+// dropping a token only revokes a short-lived share link.
 const readTokenStore = () => {
-    if (fs.existsSync(tokenStorePath)) {
-        return JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+    if (!fs.existsSync(tokenStorePath)) return {};
+    let parsed;
+    try {
+        parsed = JSON.parse(fs.readFileSync(tokenStorePath, "utf8"));
+    } catch (err) {
+        log("tokenStore.json unreadable; starting with an empty store:", err && err.message ? err.message : err);
+        return {};
     }
-    return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const store = {};
+    for (const [token, info] of Object.entries(parsed)) {
+        if (info && typeof info === "object" && typeof info.filePath === "string") store[token] = info;
+    }
+    return store;
 };
 
 // Function to write to the token store
@@ -32,6 +54,8 @@ const writeToTokenStore = (tokenStore) => {
     try {
         fs.writeFileSync(tmpPath, payload, { encoding: "utf8", mode: 0o600 });
         try { fs.chmodSync(tmpPath, 0o600); } catch (_) {}
+        const fd = fs.openSync(tmpPath, "r+");
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
         fs.renameSync(tmpPath, tokenStorePath);
         try { fs.chmodSync(tokenStorePath, 0o600); } catch (_) {}
     } finally {
@@ -42,32 +66,25 @@ const writeToTokenStore = (tokenStore) => {
 
 module.exports.createToken = (getURL, filePath) => {
     const tokenStore = readTokenStore();
-    let token = '';
-    let existingTokenFound = false;
 
-    // Check for an existing token for the filePath
-    Object.keys(tokenStore).forEach(existingToken => {
-        const tokenInfo = tokenStore[existingToken];
-        if (tokenInfo.filePath === filePath && new Date(tokenInfo.expiryDate) > new Date()) {
-            // Extend the existing token's expiry date
-            tokenInfo.expiryDate = new Date(new Date().getTime() + 600000);
-            token = existingToken;
-            existingTokenFound = true;
-        }
-    });
-
-    if (!existingTokenFound) {
-        // Create a new token if none exists for the filePath
-        token = crypto.randomBytes(20).toString('hex');
-        tokenStore[token] = { filePath, expiryDate: new Date(new Date().getTime() + 600000) };
+    // Rotate: revoke earlier tokens for this file and mint a fresh one.
+    // Reusing and extending the old token kept a leaked link valid for as
+    // long as the file kept being edited.
+    for (const [existingToken, tokenInfo] of Object.entries(tokenStore)) {
+        if (tokenInfo.filePath === filePath || isExpired(tokenInfo)) delete tokenStore[existingToken];
     }
 
-    // Filter out expired tokens
-    Object.keys(tokenStore).forEach(token => {
-        if (new Date(tokenStore[token].expiryDate) < new Date()) {
-            delete tokenStore[token];
-        }
-    });
+    const token = crypto.randomBytes(20).toString('hex');
+    tokenStore[token] = { filePath, expiryDate: new Date(Date.now() + TOKEN_TTL_MS) };
+
+    // Bound the store: drop the tokens closest to expiry first.
+    const entries = Object.entries(tokenStore);
+    if (entries.length > MAX_TOKEN_STORE_ENTRIES) {
+        entries
+            .sort((a, b) => new Date(a[1].expiryDate) - new Date(b[1].expiryDate))
+            .slice(0, entries.length - MAX_TOKEN_STORE_ENTRIES)
+            .forEach(([oldToken]) => { delete tokenStore[oldToken]; });
+    }
 
     writeToTokenStore(tokenStore);
 
@@ -86,11 +103,24 @@ module.exports.retrieveFile = async (req, res) => {
     }
 
     const tokenInfo = tokenStore[token];
-    if (new Date(tokenInfo.expiryDate) < new Date()) {
+    if (isExpired(tokenInfo)) {
         return res.status(410).send('Token has expired.');
     }
 
     if (req.query.diff) {
+        // Refuse oversized files before any git work. A missing file is fine:
+        // the diff can still show a tracked deletion.
+        try {
+            const earlyStat = fs.lstatSync(tokenInfo.filePath);
+            if (earlyStat.isFile() && earlyStat.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(500).send('Error fetching Git diff: Target file is too large to diff safely.');
+            }
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
+                console.error(err);
+                return res.status(500).send('Failed to read the file.');
+            }
+        }
         try {
             // Treat the target repository as data, not executable configuration.
             // Git plumbing only locates/reads the stage-0 blob. The actual comparison
@@ -146,7 +176,7 @@ module.exports.retrieveFile = async (req, res) => {
                     { ...gitOptions, cwd: repoRoot }
                 );
                 const indexSize = Number.parseInt(indexSizeOutput.trim(), 10);
-                if (!Number.isSafeInteger(indexSize) || indexSize < 0 || indexSize > 8 * 1024 * 1024) {
+                if (!Number.isSafeInteger(indexSize) || indexSize < 0 || indexSize > MAX_ACCESS_FILE_BYTES) {
                     throw new Error('Target file is too large to diff safely.');
                 }
                 const { stdout: indexBlob } = await execFileAsync(
@@ -172,7 +202,7 @@ module.exports.retrieveFile = async (req, res) => {
                         if (!currentStat.isFile()) {
                             throw new Error('Target path is not a regular file or symlink.');
                         }
-                        if (currentStat.size > 8 * 1024 * 1024) {
+                        if (currentStat.size > MAX_ACCESS_FILE_BYTES) {
                             throw new Error('Target file is too large to diff safely.');
                         }
                         currentBlob = fs.readFileSync(tokenInfo.filePath);
@@ -180,7 +210,7 @@ module.exports.retrieveFile = async (req, res) => {
                     }
                 }
 
-                if (currentBlob.length > 8 * 1024 * 1024) {
+                if (currentBlob.length > MAX_ACCESS_FILE_BYTES) {
                     throw new Error('Target file is too large to diff safely.');
                 }
 
@@ -286,13 +316,29 @@ module.exports.retrieveFile = async (req, res) => {
             res.status(500).send('Error fetching Git diff: ' + error.message);
         }
     } else {
-        fs.readFile(tokenInfo.filePath, 'utf8', (err, data) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Failed to read the file.');
+        // Read through one descriptor so the size check and the read see the
+        // same file, and never load an arbitrarily large file into memory.
+        let fd;
+        try {
+            fd = fs.openSync(tokenInfo.filePath, 'r');
+        } catch (err) {
+            console.error(err);
+            return res.status(500).send('Failed to read the file.');
+        }
+        try {
+            const stat = fs.fstatSync(fd);
+            if (!stat.isFile()) return res.status(400).send('Token target is not a regular file.');
+            if (stat.size > MAX_ACCESS_FILE_BYTES) {
+                return res.status(413).send('File exceeds MAX_ACCESS_FILE_BYTES (' + MAX_ACCESS_FILE_BYTES + ').');
             }
+            const data = fs.readFileSync(fd, 'utf8');
             res.setHeader('Content-Type', 'text/plain');
             res.send(data);
-        });
+        } catch (err) {
+            console.error(err);
+            res.status(500).send('Failed to read the file.');
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 };
