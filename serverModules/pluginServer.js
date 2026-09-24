@@ -69,7 +69,21 @@ const htmlContent = marked.parse(data);
     expressApp.use(require('./auth.js')(log, config));
 
     const serverUrl = config.productionDomain;
-    addApi(expressApp, config, () => serverUrl, () => {});
+    // Canonical listener-close for /api/restart: stop accepts, drop idle
+    // keep-alives, and invoke the handler callback only after in-flight
+    // responses drain. Active command-process cleanup is a separate path.
+    addApi(expressApp, config, () => serverUrl, (done) => {
+        // Keep sweeping: a keep-alive connection that finishes its in-flight
+        // request after close() would otherwise hold the drain open until the
+        // keep-alive timeout.
+        const sweep = setInterval(() => server.closeIdleConnections(), 100);
+        sweep.unref();
+        server.closeIdleConnections();
+        server.close((error) => {
+            clearInterval(sweep);
+            if (typeof done === 'function') done(error);
+        });
+    });
 
     expressApp.use((err, req, res, next) => {
         if (res.headersSent) return next(err);

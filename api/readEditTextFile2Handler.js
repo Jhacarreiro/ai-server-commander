@@ -46,23 +46,20 @@ const resolveRealPath = ( target ) => {
 };
 
 const replaceTextInSection = async ( filePath, replacements ) => {
-    let fileHandle;
     let fileContent = '';
+    let created = false;
     const readOnly = !replacements || replacements.length === 0;
 
-    // Check if the file exists only when replacements are empty
-    if ( readOnly && !fs.existsSync( filePath ) ) {
-        throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' ); // File does not exist and no replacements specified, so do nothing
-    }
-
     try {
-        // 'r' for pure reads (never creates files); 'a+' only when the caller intends to modify
-        fileHandle = await fs.promises.open( filePath, readOnly ? 'r' : 'a+' );
-        fileContent = await fileHandle.readFile( 'utf8' );
+        fileContent = await fs.promises.readFile( filePath, 'utf8' );
     } catch ( err ) {
-        log( 'Error reading or creating file:', err );
-    } finally {
-        if ( fileHandle !== undefined ) await fileHandle.close(); // Close the file handle regardless of success or error
+        // Only a missing file may become a new one; any other read error must
+        // not be mistaken for empty content that would then be written back.
+        if ( !err || err.code !== 'ENOENT' ) throw err;
+        if ( readOnly ) {
+            throw new Error( 'File does not exist, if you want to create it ask for initial content and try again.' );
+        }
+        created = true;
     }
 
     if ( readOnly ) {
@@ -76,9 +73,25 @@ const replaceTextInSection = async ( filePath, replacements ) => {
 
     const result = await mergeText( fileContent, replacements );
 
-    await fs.promises.writeFile( filePath, result.updatedContent );
+    // A new file is only written when every replacement applied, so a failed
+    // edit never leaves an empty or partial file behind.
+    const written = !created || result.unsuccessfulReplacements.length === 0;
+    if ( written ) {
+        await fs.promises.writeFile( filePath, result.updatedContent );
+    }
 
-    return result;
+    return Object.assign( result, { created, written } );
+};
+
+// Undo an edit that cannot be kept: restore the previous content, or remove
+// the file entirely when this request created it.
+const revertEdit = async ( filePath, replaceResult ) => {
+    if ( !replaceResult.written ) return;
+    if ( replaceResult.created ) {
+        await fs.promises.rm( filePath, { force: true } );
+        return;
+    }
+    await fs.promises.writeFile( filePath, replaceResult.originalContent );
 };
 
 /**
@@ -235,9 +248,11 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             debugger;
             let issues = await checkJavaScriptFile( filePath );
             if ( issues.length > 0 ) {
-                await fs.promises.writeFile( filePath, replaceResult.originalContent );
+                await revertEdit( filePath, replaceResult );
                 responseMessage += "\nError happened, explain it to user";
-                responseMessage += "\nFile reverted to original form before changes";
+                responseMessage += replaceResult.created
+                    ? "\nNew file was not kept"
+                    : "\nFile reverted to original form before changes";
                 responseMessage += '\nIssues found in the file: \n' + JSON.stringify( issues );
                 responseMessage += `\nFile content before change: ${replaceResult.originalContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
                 responseMessage += `\nFile content after change: ${replaceResult.updatedContent.split('\n').map((l, i) => `${i}: ${l}`).join('\n')}`;
@@ -248,11 +263,13 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         }
 
         if ( replaceResult.unsuccessfulReplacements.length > 0 ) {
-            await fs.promises.writeFile( filePath, replaceResult.originalContent );
+            await revertEdit( filePath, replaceResult );
             let unsuccessfulMessages = replaceResult.unsuccessfulReplacements.join( "; " );
             responseMessage += "\nError happened, explain it to user";
             responseMessage += `\nUnsuccessful replacements due to missing texts: ${unsuccessfulMessages}`;
-            responseMessage += `\nFile reverted to original version before changes`;
+            responseMessage += replaceResult.created
+                ? `\nNew file was not created`
+                : `\nFile reverted to original version before changes`;
             if ( replacements.length > replaceResult.unsuccessfulReplacements.length ) {
                 responseMessage += `\n${replacements.length - replaceResult.unsuccessfulReplacements.length} replacements were successful do them first, then try fixing failing ones in separate request`;
             }
@@ -273,6 +290,9 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
         res.type( 'text/plain' ).send( responseMessage );
     } catch ( error ) {
         console.error( error );
+        if ( replaceResult && replaceResult.created && replaceResult.written ) {
+            await fs.promises.rm( filePath, { force: true } ).catch( () => {} );
+        }
         const logData = {
             error: error.message,
             request: req.body || req.query,
@@ -289,3 +309,4 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
 };
 
 module.exports = readEditTextFileHandler;
+module.exports.replaceTextInSection = replaceTextInSection;

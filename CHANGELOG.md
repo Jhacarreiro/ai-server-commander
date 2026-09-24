@@ -8,6 +8,8 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- `/api/restart` stops accepting connections and waits for in-flight responses before exiting, bounded by `RESTART_FORCE_EXIT_MS` (default 30 seconds), instead of exiting after a fixed 500 ms.
+- `/api/read-or-edit-file` no longer leaves an empty file behind when an edit of a missing file fails, and never creates a file for a read. Creating a file with an empty `originalText` still works; a newly created file that fails the JavaScript syntax check is removed.
 - MCP `initialize` always advertises protocol version `2025-03-26` instead of echoing the client's requested version. Clients that cannot use `2025-03-26` disconnect during negotiation. This server does not implement other protocol versions.
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
@@ -17,6 +19,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - REST bearer tokens and the MCP `?token=` query token are now compared in constant time.
 - Startup rejects the documented example secrets as `authToken` or `mcpToken`. The previous long placeholders met the 32-character minimum, so an unedited copy of `config.example.json` started with a publicly known token. The example now uses short, invalid placeholders.
 - Firebase app view/edit pages HTML-escape the stored app name and description.
+- Unauthenticated OAuth client registration is bounded by `MAX_OAUTH_CLIENTS` (default 200). Idle clients without live grants are evicted first, so throwaway registrations cannot lock out clients that are in use. Stored `client_name` values are capped by `MAX_CLIENT_NAME_CHARS`.
+- OAuth and `.well-known` responses send `Cache-Control: no-store`.
+- Inline commands are logged through the redacting, length-bounded preview instead of verbatim.
+- File-edit error responses no longer include stack traces; the error message is kept.
 - `/api/read-or-edit-file` resolves paths (including symlinks) and rejects targets outside the workspace directory. `GET` is now a pure read that returns the raw file content without minting access tokens, syntax-checking, beautifying or rewriting the file.
 
 ### Removed

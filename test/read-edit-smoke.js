@@ -113,6 +113,31 @@ function mockRes() {
       assert(threw, `validateConfig rejects the documented mcpToken placeholder ${placeholder}`);
     }
 
+    // --- 5. File creation is explicit and never left behind by a failed edit ---
+    const createRes = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'created.txt', replacements: [{ originalText: '', replacementText: 'hello\n' }] }, query: {} }, createRes);
+    assert(createRes.statusCode === null && fs.readFileSync(path.join(workDir, 'created.txt'), 'utf8') === 'hello\n', 'POST with an empty originalText creates a new file');
+
+    const failedCreate = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'never.txt', replacements: [{ originalText: 'missing', replacementText: 'x' }] }, query: {} }, failedCreate);
+    assert(failedCreate.statusCode === 400, 'failed edit on a missing file is rejected', `got ${failedCreate.statusCode}`);
+    assert(!fs.existsSync(path.join(workDir, 'never.txt')), 'failed edit on a missing file does not leave an empty file');
+
+    const badJs = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'broken.js', replacements: [{ originalText: '', replacementText: 'const = ;\n' }] }, query: {} }, badJs);
+    assert(badJs.statusCode === 400 && !fs.existsSync(path.join(workDir, 'broken.js')), 'a new .js file with syntax errors is not kept');
+
+    const missingRead = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'absent.txt' }, query: {} }, missingRead);
+    assert(missingRead.statusCode === 500 && !fs.existsSync(path.join(workDir, 'absent.txt')), 'a read of a missing file does not create it');
+
+    // --- 6. Client errors keep the message but never include a stack trace ---
+    const hintRes = mockRes();
+    await handler({ method: 'POST', body: { filePath: 'notes.txt', mergeText: 'no conflict blocks here' }, query: {} }, hintRes);
+    const clientError = JSON.parse(hintRes.body.error);
+    assert(hintRes.statusCode === 500 && /no conflict blocks were found/.test(clientError.message), 'error response keeps the actionable message');
+    assert(!('stack' in clientError), 'error response does not include a stack trace');
+
     console.log('ALL read-edit smoke tests passed');
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });

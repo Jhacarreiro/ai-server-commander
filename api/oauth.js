@@ -10,6 +10,8 @@ const AUTH_CODE_TTL_MS = positiveInteger(process.env.OAUTH_AUTH_CODE_TTL_SECONDS
 const ACCESS_TOKEN_TTL_SECONDS = positiveInteger(process.env.OAUTH_ACCESS_TOKEN_TTL_SECONDS, 3600);
 const REFRESH_TOKEN_TTL_MS = positiveInteger(process.env.OAUTH_REFRESH_TOKEN_TTL_SECONDS, 30 * 24 * 3600) * 1000;
 const SUPPORTED_SCOPE = 'terminal';
+const MAX_OAUTH_CLIENTS = positiveInteger(process.env.MAX_OAUTH_CLIENTS, 200);
+const MAX_CLIENT_NAME_CHARS = positiveInteger(process.env.MAX_CLIENT_NAME_CHARS, 128);
 
 function baseUrl(config, req) {
     const configured = config.productionDomain || config.serverUrl;
@@ -94,6 +96,16 @@ function issueTokenPair(store, clientId, sourceRecord, oldRefreshToken = null, a
 }
 
 function addOAuthRoutes(app, config) {
+    // Token responses, one-time client secrets and the consent form must not
+    // be cached by shared intermediaries (RFC 6749 section 5.1).
+    app.use((req, res, next) => {
+        if (req.path.startsWith('/oauth/') || req.path.startsWith('/.well-known/')) {
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Pragma', 'no-cache');
+        }
+        next();
+    });
+
     const store = getOAuthStore(config);
 
     const protectedResourceMetadata = (req, res) => {
@@ -132,6 +144,14 @@ function addOAuthRoutes(app, config) {
 
     app.post('/oauth/register', (req, res) => {
         const body = req.body || {};
+        // Registration is unauthenticated, so bound the persisted client list.
+        // Clients without any live code or token are evicted first, which keeps
+        // a flood of throwaway registrations from locking out real clients.
+        while (store.getClientCount() >= MAX_OAUTH_CLIENTS) {
+            if (!store.evictIdleClient()) {
+                return sendJson(res, { error: 'too_many_clients', error_description: 'Client registration limit reached and every registered client holds an active grant.' }, 429);
+            }
+        }
         const redirectUris = normalizeRedirectUris(body);
         if (!redirectUris.length) return sendJson(res, { error: 'invalid_redirect_uri', error_description: 'At least one HTTPS or localhost redirect URI is required.' }, 400);
         const authMethod = body.token_endpoint_auth_method || 'none';
@@ -150,7 +170,9 @@ function addOAuthRoutes(app, config) {
             response_types: ['code'],
             token_endpoint_auth_method: authMethod,
             scope,
-            client_name: body.client_name || 'AI Server Commander MCP client'
+            client_name: typeof body.client_name === 'string' && body.client_name.trim()
+                ? body.client_name.trim().slice(0, MAX_CLIENT_NAME_CHARS)
+                : 'AI Server Commander MCP client'
         };
         store.setClient(storedClient);
         return sendJson(res, {
