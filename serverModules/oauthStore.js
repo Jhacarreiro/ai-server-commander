@@ -131,6 +131,29 @@ class OAuthStore {
         return this.data.clients[clientId] || null;
     }
 
+    getClientCount() {
+        return Object.keys(this.data.clients).length;
+    }
+
+    // Drops the oldest registered client that holds no live authorization
+    // code, access token or refresh token. Returns the evicted client_id.
+    evictIdleClient() {
+        this.pruneExpired();
+        const active = new Set();
+        for (const section of ['authCodes', 'accessTokens', 'refreshTokens']) {
+            for (const record of Object.values(this.data[section])) {
+                if (record && record.client_id) active.add(record.client_id);
+            }
+        }
+        const idle = Object.values(this.data.clients)
+            .filter((client) => client && !active.has(client.client_id))
+            .sort((a, b) => (Number(a.client_id_issued_at) || 0) - (Number(b.client_id_issued_at) || 0));
+        if (!idle.length) return null;
+        delete this.data.clients[idle[0].client_id];
+        this.persist();
+        return idle[0].client_id;
+    }
+
     setClient(client) {
         this.data.clients[client.client_id] = { ...client };
         this.persist();
