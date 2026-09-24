@@ -301,11 +301,12 @@ Treat terminal execution as a sequence of bounded operations rather than one lar
 
 For multi-file changes, logical atomicity matters more than one-request-per-file: stage the complete patch or helper script, apply it once, then validate in separate calls.
 
-If a transport, reverse-proxy, or WAF error occurs after a mutating request, do **not** automatically resend the same payload. The request may have reached the origin even when the client did not receive the response. Probe state with a small read-only request first, then continue from the observed state.
+If a transport, reverse-proxy, or WAF error occurs after a mutating request, do **not** automatically resend a payload that had no `operationId`. The request may have reached the origin even when the client did not receive the response. Probe state with a small read-only request first, then continue from the observed state. Requests that carried an `operationId` can be recovered safely as described in the next section.
 
 Clients should also:
 
 - avoid very large inline heredocs or JSON-encoded scripts when a staged file/script is practical;
+- send a fresh `operationId` with every mutating request;
 - keep execution separate from staging so a retry does not resend large content;
 - bound output at the source with targeted `tail`, `grep`, or equivalent filters;
 - collapse proxy/WAF HTML error pages into a short transport error instead of feeding the whole page back to the model.
