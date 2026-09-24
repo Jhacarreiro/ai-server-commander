@@ -8,6 +8,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- `port` must be a decimal integer from 1 to 65535. Values such as `3000abc` or `1e3` were silently parsed as 3000 and 1; an existing `config.json` with such a value keeps starting on the previously parsed port with a warning and is not rewritten. The first-run wizard asks again on invalid input instead of exiting, and Ctrl-D cancels it cleanly.
 - A configuration or startup error is reported as one `Failed to start server: ...` line with exit status 1 instead of an unhandled rejection and stack trace.
 - `/api/read-or-edit-file` validates a whole batch before applying it: an empty `originalText` is only accepted as the initial content of a new or empty file, `null` values and malformed conflict blocks (missing `=======` or closing marker) are rejected, and conflict replacements may contain `=======`. Requests are limited by `MAX_REPLACEMENTS` and `MAX_EDIT_FILE_BYTES`, and fuzzy matching by `MAX_FUZZY_QUERY_CHARS` / `MAX_FUZZY_HAYSTACK_CHARS`.
 - JavaScript edits (`.js`, `.mjs`, `.cjs`) are syntax-checked as a module and, failing that, as a classic script. Formatting is skipped when js-beautify could change behavior (for example `return` followed by a newline) or produce invalid code, and a leading BOM is kept. TypeScript and JSX files are not syntax-checked.
