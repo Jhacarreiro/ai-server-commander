@@ -40,7 +40,7 @@ module.exports = (log, config) => ((req, res, next) => {
         const expectedMcpToken = config.mcpToken || config.authToken;
         // Pre-shared MCP token: accept query (?token=) OR standard Authorization: Bearer.
         // OAuth access tokens remain supported via validateAccessToken below.
-        if (queryToken && queryToken === expectedMcpToken) {
+        if (queryToken && safeEqual(queryToken, expectedMcpToken)) {
             next();
             return;
         }
@@ -58,7 +58,7 @@ module.exports = (log, config) => ((req, res, next) => {
     }
 
     if (typeof bearerHeader !== 'undefined') {
-        if (bearerToken === config.authToken) {
+        if (safeEqual(bearerToken, config.authToken)) {
             next();
         } else {
             res.sendStatus(403);

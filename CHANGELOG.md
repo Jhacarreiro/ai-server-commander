@@ -12,6 +12,13 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
 
+### Security
+
+- REST bearer tokens and the MCP `?token=` query token are now compared in constant time.
+- Startup rejects the documented example secrets as `authToken` or `mcpToken`. The previous long placeholders met the 32-character minimum, so an unedited copy of `config.example.json` started with a publicly known token. The example now uses short, invalid placeholders.
+- Firebase app view/edit pages HTML-escape the stored app name and description.
+- `/api/read-or-edit-file` resolves paths (including symlinks) and rejects targets outside the workspace directory. `GET` is now a pure read that returns the raw file content without minting access tokens, syntax-checking, beautifying or rewriting the file.
+
 ### Removed
 
 - Removed the unregistered `api/sentenceVector.js` and `api/transformers.js` modules, including a leftover captured browser request (cookies and a CSRF token) in `transformers.js`, and the unused `initDB` import in `apiRoutes.js`. Firebase initialization remains in `pluginServer.js`.
