@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const STORE_VERSION = 1;
+const PRUNE_INTERVAL_MS = 60 * 1000;
 const stores = new Map();
 
 function hashSecret(value) {
@@ -63,6 +64,17 @@ class OAuthStore {
         this.statePath = path.resolve(statePath);
         this.now = now;
         this.data = this.load();
+        this.pruneExpired();
+        this.lastPruneAt = this.now();
+    }
+
+    // Expired grants used to be removed only at startup, so a long-running
+    // server kept every expired access token it had issued. Prune on reads,
+    // at most once per PRUNE_INTERVAL_MS.
+    pruneExpiredOccasionally() {
+        const now = this.now();
+        if (now - this.lastPruneAt < PRUNE_INTERVAL_MS) return;
+        this.lastPruneAt = now;
         this.pruneExpired();
     }
 
@@ -160,6 +172,7 @@ class OAuthStore {
     }
 
     getAuthCode(rawCode) {
+        this.pruneExpiredOccasionally();
         return this.data.authCodes[hashSecret(rawCode)] || null;
     }
 
@@ -177,6 +190,7 @@ class OAuthStore {
     }
 
     getAccessToken(rawToken) {
+        this.pruneExpiredOccasionally();
         return this.data.accessTokens[hashSecret(rawToken)] || null;
     }
 
@@ -194,6 +208,7 @@ class OAuthStore {
     }
 
     getRefreshToken(rawToken) {
+        this.pruneExpiredOccasionally();
         return this.data.refreshTokens[hashSecret(rawToken)] || null;
     }
 
