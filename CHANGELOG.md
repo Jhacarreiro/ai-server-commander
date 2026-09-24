@@ -27,6 +27,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 ### Security
 
 - `SAFE_MODE` blocks `rm` on the filesystem root in every flag order and spelling (`-fr`, `-f -r`, `--recursive --force`, `--no-preserve-root`), with globs or chaining after the slash, and inside command substitution; `dd` writing to a device node; fork bombs with any function name; and `passwd` as a command word. Reading `/etc/passwd` and `dd` to regular files, `/dev/null` or `/dev/shm` are no longer blocked. `SAFE_MODE` remains a denylist, not a sandbox.
+- Share links from `/api/read-or-edit-file` rotate: each kept edit mints a new token and revokes the previous one for that file, instead of extending the same token for as long as the file keeps changing. A missing or unparseable expiry counts as expired, malformed or unreadable `tokenStore.json` entries are dropped instead of crashing requests, the store is capped by `MAX_TOKEN_STORE_ENTRIES`, and `/access/<token>` refuses files above `MAX_ACCESS_FILE_BYTES` and non-regular files.
 - REST bearer tokens and the MCP `?token=` query token are now compared in constant time.
 - Startup rejects the documented example secrets as `authToken` or `mcpToken`. The previous long placeholders met the 32-character minimum, so an unedited copy of `config.example.json` started with a publicly known token. The example now uses short, invalid placeholders.
 - Firebase app view/edit pages HTML-escape the stored app name and description.
