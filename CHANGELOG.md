@@ -12,6 +12,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 - An empty JSON-RPC batch (`[]`) on `/mcp` now returns HTTP 400 with JSON-RPC `-32600` instead of HTTP 202 with no body. Notification-only POSTs still return HTTP 202.
 - Replaced the `firebase-admin` runtime dependency with the direct `@google-cloud/firestore` client used by the application, removing the unused Google Cloud Storage dependency chain and its remaining runtime advisories.
 
+### Removed
+
+- Removed the unregistered `api/sentenceVector.js` and `api/transformers.js` modules, including a leftover captured browser request (cookies and a CSRF token) in `transformers.js`, and the unused `initDB` import in `apiRoutes.js`. Firebase initialization remains in `pluginServer.js`.
+
 ### Added
 
 - Added MCP smoke coverage for server protocol-version negotiation and empty-batch rejection.
