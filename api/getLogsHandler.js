@@ -9,14 +9,20 @@ const {getLog} = require("../serverModules/logger");
  *     operationId: getLogs
  *     responses:
  *       200:
- *         description: A list of server logs.
+ *         description: The most recent in-memory log entries (at most 2000).
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: string
- *               description: Server logs
+ *               type: object
+ *               properties:
+ *                 logs:
+ *                   type: array
+ *                   description: Log entries, oldest first. Each entry is the list of arguments passed to the logger.
+ *                   items:
+ *                     type: array
+ *                     items: {}
+ *               required:
+ *                 - logs
  */
 module.exports = (req, res) => {
     res.json({ logs: getLog() });

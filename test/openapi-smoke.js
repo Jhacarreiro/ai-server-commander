@@ -56,6 +56,30 @@ function assert(cond, label, details='') { if (!cond) throw new Error(label + (d
     const responseProperties = spec.components.schemas.CommandResponse.properties;
     assert(responseProperties.activityId && responseProperties.interrupted, 'OpenAPI has activity and interruption fields');
     assert(responseProperties.operationId && responseProperties.operationState && responseProperties.replayed, 'OpenAPI has operation recovery fields');
+
+    // GPT Actions name each operation by its operationId; every one needs a unique id.
+    const operations = [];
+    for (const [route, methods] of Object.entries(paths)) {
+      for (const [method, operation] of Object.entries(methods)) operations.push({ route, method, operation });
+    }
+    const missing = operations.filter(({ operation }) => !operation.operationId).map(({ route, method }) => `${method.toUpperCase()} ${route}`);
+    assert(missing.length === 0, 'every OpenAPI operation has an operationId', missing.join(', '));
+    const ids = operations.map(({ operation }) => operation.operationId);
+    assert(new Set(ids).size === ids.length, 'OpenAPI operationIds are unique', ids.join(', '));
+    assert(paths['/api/runTerminalScript'].post.operationId === 'runTerminalScript', 'POST /api/runTerminalScript keeps the runTerminalScript action name used by prompt.md');
+
+    for (const [route, method] of [['/api/runTerminalScript', 'get'], ['/api/runTerminalScript', 'post'], ['/v1/commands/execute', 'post']]) {
+      const statuses = Object.keys(paths[route][method].responses);
+      assert(['200', '202', '400', '403', '409', '413', '429', '500'].every((code) => statuses.includes(code)), `${method.toUpperCase()} ${route} documents every status it returns`, statuses.join(','));
+    }
+    assert(paths['/api/runTerminalScript'].get.parameters.some((p) => p.name === 'operationId'), 'GET execute documents the operationId query parameter');
+    assert(paths['/v1/commands/operations/{operationId}'].get.responses['200'].content['application/json'].schema.$ref === '#/components/schemas/OperationStatus', 'operation probe documents its response schema');
+
+    const logsSchema = paths['/api/logs'].get.responses['200'].content['application/json'].schema;
+    assert(logsSchema.type === 'object' && logsSchema.properties.logs.type === 'array', 'GET /api/logs documents the { logs } envelope');
+    const readEdit = paths['/api/read-or-edit-file'];
+    assert(readEdit.get.responses['200'].content['text/plain'] && readEdit.post.responses['200'].content['text/plain'], 'read-or-edit-file documents plain-text success responses');
+    assert(readEdit.get.responses['413'] && readEdit.post.responses['413'] && readEdit.post.responses['500'], 'read-or-edit-file documents its size-limit and error responses');
   } finally {
     if (server) server.kill('SIGTERM');
     restoreConfig();
