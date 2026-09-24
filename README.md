@@ -159,7 +159,8 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
 | `MAX_OAUTH_CLIENTS` | `200` | Maximum persisted dynamically registered OAuth clients. At the limit, the oldest client without a live code or token is evicted; registration returns `429` only when every client holds an active grant. |
 | `MAX_CLIENT_NAME_CHARS` | `128` | Maximum stored length of a registered OAuth `client_name`; longer names are truncated. |
-| `RESTART_FORCE_EXIT_MS` | `30000` | Upper bound for `/api/restart` to wait for in-flight responses before the process exits anyway. |
+| `RESTART_FORCE_EXIT_MS` | `30000` | Upper bound for `/api/restart` to wait for in-flight responses before the process exits anyway. Running commands are interrupted first. |
+| `MAX_CONCURRENT_COMMANDS` | `8` | Maximum commands running at once across REST and MCP. Further requests get `429` and do not consume their `operationId`. |
 | `MAX_INLINE_COMMAND_BYTES` | `65536` | Maximum inline command size in bytes; larger inline commands are rejected with `413`. Send larger payloads in script mode. |
 | `MAX_NOTICE_TEXT` | `8192` | Maximum `/api/notices` text length; longer notices are rejected with `400`. |
 | `MAX_NOTICE_SOURCE` | `256` | Maximum `/api/notices` source length; longer values are rejected with `400`. |

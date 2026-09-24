@@ -110,7 +110,7 @@ record command_finished
 return REST JSON or MCP result
 ```
 
-Timeouts and explicit interruption target the process group on POSIX hosts to reduce orphaned subprocesses.
+Timeouts and explicit interruption send SIGTERM to the command's process group on POSIX hosts and SIGKILL after a short grace period, so pipelines, background children and commands that ignore SIGTERM do not outlive the request. At most `MAX_CONCURRENT_COMMANDS` commands run at once; `/api/restart` interrupts every running command before the process exits.
 
 ## State
 
