@@ -8,7 +8,7 @@
  * /api/restart:
  *   post:
  *     summary: Restart the Node.js application.
- *     description: Stops accepting new connections, waits for in-flight responses to drain, then exits. A last-resort process exit applies if drain exceeds RESTART_FORCE_EXIT_MS (default 30000).
+ *     description: Interrupts running commands (SIGTERM, then SIGKILL after a short grace period), stops accepting new connections, waits for in-flight responses to drain, then exits. A last-resort process exit applies if draining exceeds RESTART_FORCE_EXIT_MS (default 30000).
  *     operationId: exitApplication
  *     responses:
  *       '200':
@@ -22,6 +22,8 @@
  *                   type: string
  *                   description: A message indicating that the application is restarting.
  */
+const { killPendingNow, terminateAll } = require('../serverModules/commandExecutor');
+
 function forceExitMs() {
   const parsed = Number(process.env.RESTART_FORCE_EXIT_MS);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 30000;
@@ -38,6 +40,7 @@ const exitApplicationHandler = (close) => (req, res) => {
     const exitProcess = () => {
       if (exited) return;
       exited = true;
+      killPendingNow();
       process.exit();
     };
     const force = setTimeout(exitProcess, forceExitMs());
@@ -45,6 +48,9 @@ const exitApplicationHandler = (close) => (req, res) => {
       clearTimeout(force);
       exitProcess();
     };
+    // Interrupt running commands first: their requests then complete with
+    // interrupted: true and drain, and no command outlives the process.
+    terminateAll();
     try {
       const maybe = typeof close === 'function' ? close(finish) : undefined;
       if (maybe && typeof maybe.then === 'function') {

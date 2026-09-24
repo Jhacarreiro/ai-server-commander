@@ -426,10 +426,11 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
             }
         }
 
+        const overCapacity = error && error.code === 'TOO_MANY_CONCURRENT_COMMANDS';
         return {
-            status: 500,
+            status: overCapacity ? 429 : 500,
             result: {
-                message: mode === 'script' ? 'Script execution failed.' : 'Command execution failed.',
+                message: overCapacity ? error.message : (mode === 'script' ? 'Script execution failed.' : 'Command execution failed.'),
                 activityId,
                 ...(operationId ? { operationId, operationState, replayed: false } : {}),
                 output: '',
