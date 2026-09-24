@@ -149,6 +149,8 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `COMMAND_TIMEOUT_MS` | `120000` | Server-wide maximum command duration. Client requests can ask for less, not more. |
 | `MAX_OUTPUT_CHARS` | `12000` | Server-wide maximum returned output. |
 | `MAX_SCRIPT_BODY_BYTES` | `524288` | Maximum script/request body size. |
+| `COMMAND_OPERATIONS_PATH` | `runtime/command-operations.json` | Persistent `operationId` state used for idempotent recovery. |
+| `COMMAND_OPERATION_TTL_SECONDS` | `86400` | How long a completed or accepted `operationId` is retained before it can be reused. |
 | `OAUTH_STATE_PATH` | `runtime/oauth-state.json` | Persistent OAuth client and token-hash state. |
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
@@ -290,7 +292,11 @@ curl -sS \
 
 For mutating POST requests, clients may provide an optional `operationId` (1-128 characters: letters, digits, `.`, `_`, `:`, `-`). Commander persists only a command fingerprint and bounded execution summary; it does not store stdout in the operation record.
 
-Reusing the same `operationId` with the same command never executes the command again. Reusing it with a different command returns HTTP `409`.
+Reusing the same `operationId` with the same command does not execute the command again while the record is retained. Reusing it with a different command returns HTTP `409`.
+
+Operation records are kept for `COMMAND_OPERATION_TTL_SECONDS` (default 24 hours) and for at most 512 recent operations; after that the same `operationId` is treated as new. IDs are scoped per adapter, so REST and MCP clients cannot replay or block each other's operations. Generate a fresh, unique `operationId` for every distinct mutation.
+
+If Commander rejects a request before anything runs (for example a `SAFE_MODE` block or a failure to start the process), the response reports `operationState: "not_executed"` and the `operationId` is released for a clean retry.
 
 After a lost transport response, probe the operation before deciding whether to retry:
 
@@ -299,7 +305,7 @@ GET /v1/commands/operations/deploy-config-2026-09-23T0945Z
 Authorization: Bearer <authToken>
 ```
 
-The returned state is one of `running`, `finished`, `indeterminate`, or `unknown`. `indeterminate` is deliberately conservative: Commander accepted the operation previously, but the current process cannot prove whether it completed, so the client should inspect target state rather than resubmit blindly.
+The probe covers REST operations. The returned state is one of `running`, `finished`, `indeterminate`, or `unknown`. MCP clients can recover by resending the same arguments with the same `operationId`: the result reports `replayed: true` and the operation state without running the command again. `indeterminate` is deliberately conservative: Commander accepted the operation previously, but the current process cannot prove whether it completed, so the client should inspect target state rather than resubmit blindly.
 
 ### Interrupt a command
 

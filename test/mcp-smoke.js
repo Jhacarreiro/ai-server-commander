@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -106,9 +107,10 @@ function assert(condition, label, details = '') {
     writeTestConfig();
     fs.rmSync(logPath, { force: true });
     const out = fs.openSync(logPath, 'a');
+    const operationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-mcp-operations-'));
     server = spawn('node', ['main.js'], {
         cwd: root,
-        env: { ...process.env, SAFE_MODE: 'true' },
+        env: { ...process.env, SAFE_MODE: 'true', COMMAND_OPERATIONS_PATH: path.join(operationsDir, 'command-operations.json') },
         stdio: ['ignore', out, out]
     });
 
@@ -180,6 +182,23 @@ function assert(condition, label, details = '') {
         assert(response.body.result.isError === false && inlineText.includes('mcp_ok') && inlineText.includes('activityId:'), 'MCP inline execution uses shared executor');
         assert(inlineStructured && inlineStructured.output === 'mcp_ok' && inlineStructured.exitCode === 0 && inlineStructured.activityId, 'MCP inline execution returns structured content');
         assert(Object.keys(inlineStructured).sort().join(',') === listedTool.outputSchema.required.slice().sort().join(','), 'MCP structured result matches declared output keys');
+
+        const mcpOperationId = `mcp-smoke-${process.pid}-${Date.now()}`;
+        const mcpMarker = path.join(operationsDir, 'mcp-marker.txt');
+        const operationArgs = { command: `printf x >> ${mcpMarker} && printf mcp_op`, operationId: mcpOperationId, timeoutMs: 5000 };
+        response = await rpc({ jsonrpc: '2.0', id: 31, method: 'tools/call', params: { name: 'run_terminal_command', arguments: operationArgs } });
+        assert(response.body.result.structuredContent.replayed === false && response.body.result.structuredContent.output === 'mcp_op', 'MCP operationId first execution', JSON.stringify(response.body));
+        response = await rpc({ jsonrpc: '2.0', id: 32, method: 'tools/call', params: { name: 'run_terminal_command', arguments: operationArgs } });
+        assert(response.body.result.structuredContent.replayed === true && response.body.result.content[0].text.includes('replayed: true'), 'MCP operationId replay is visible in structured and text content', JSON.stringify(response.body));
+        assert(fs.readFileSync(mcpMarker, 'utf8') === 'x', 'MCP operationId replay does not re-execute');
+
+        const runningArgs = { command: 'sleep 1', operationId: mcpOperationId + '-running', timeoutMs: 5000 };
+        const runningFirst = rpc({ jsonrpc: '2.0', id: 33, method: 'tools/call', params: { name: 'run_terminal_command', arguments: runningArgs } });
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        response = await rpc({ jsonrpc: '2.0', id: 34, method: 'tools/call', params: { name: 'run_terminal_command', arguments: runningArgs } });
+        const runningStructured = response.body.result.structuredContent;
+        assert(runningStructured.operationState === 'running' && runningStructured.exitCode === null && listedTool.outputSchema.properties.exitCode.type.includes('null'), 'MCP running replay reports a null exit code allowed by the output schema', JSON.stringify(response.body));
+        await runningFirst;
 
         response = await rpc({
             jsonrpc: '2.0', id: 4, method: 'tools/call',
@@ -302,6 +321,7 @@ function assert(condition, label, details = '') {
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();
+        fs.rmSync(operationsDir, { recursive: true, force: true });
     }
 })().catch((err) => {
     if (server) server.kill('SIGTERM');
