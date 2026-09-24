@@ -130,33 +130,43 @@ const revertEdit = async ( filePath, replaceResult ) => {
  *   get:
  *      operationId: readTextInFile
  *      summary: Read a file content
+ *      description: Pure read of a file inside the workspace directory. Nothing is written and no share link is minted.
  *      parameters:
  *        - in: query
  *          name: filePath
  *          required: true
  *          schema:
  *            type: string
- *          description: Path to the file to be read
+ *          description: Path to the file, relative to the workspace directory
  *      responses:
  *        200:
- *          description: File read successfully
+ *          description: Raw file content
  *          content:
  *            text/plain:
  *              schema:
  *                type: string
  *        400:
- *          description: Error reading the file
+ *          description: Missing filePath (JSON), a path outside the workspace, or a read error (plain text)
  *          content:
  *            application/json:
  *              schema:
- *                type: object
- *                properties:
- *                  error:
- *                    type: string
- *                    description: Error message explaining the reason for failure
+ *                $ref: '#/components/schemas/FileEditError'
+ *            text/plain:
+ *              schema:
+ *                type: string
+ *        413:
+ *          description: File larger than MAX_EDIT_FILE_BYTES
+ *          content:
+ *            text/plain:
+ *              schema:
+ *                type: string
  *   post:
  *     summary: Modify a file using search and replace command list
- *     description: Accepts a file path and a search and replace strings
+ *     description: >-
+ *       Applies search-and-replace edits to a file inside the workspace directory. The whole batch is validated
+ *       before anything is written; if any replacement fails, the file is left unchanged. JavaScript files
+ *       (.js, .mjs, .cjs) must still parse after the edit. An empty originalText is only accepted to create a
+ *       new (or fill an empty) file.
  *     operationId: replaceTextInSection
  *     requestBody:
  *       required: true
@@ -164,43 +174,75 @@ const revertEdit = async ( filePath, replaceResult ) => {
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - filePath
  *             properties:
  *               filePath:
  *                 type: string
- *                 description: Path to the file to be edited
+ *                 description: Path to the file, relative to the workspace directory
  *               replacements:
  *                 type: array
- *                 description: Array of text replacement
+ *                 maxItems: 50
+ *                 description: Replacements applied in order (at most MAX_REPLACEMENTS)
  *                 items:
- *                   type: object
- *                   properties:
- *                     originalText:
- *                       type: string
- *                       description: Text to be replaced
- *                     replacementText:
- *                       type: string
- *                       description: Text to replace with
+ *                   $ref: '#/components/schemas/TextReplacement'
+ *               replacement:
+ *                 $ref: '#/components/schemas/TextReplacement'
+ *               mergeText:
+ *                 type: string
+ *                 description: Alternative to replacements, one or more conflict blocks of the form "<<<<<<< HEAD", original text, "=======", replacement text, ">>>>>>> name"
  *     responses:
  *       200:
- *         description: File modification was successful
+ *         description: Edit kept. Plain-text summary with the share link, the diff link and the resulting file content.
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
- *               type: object
- *               properties:
- *                 content:
- *                   type: string
- *                   description: Updated file content and urls
+ *               type: string
  *       400:
- *         description: There was an error in the text replacement
+ *         description: >-
+ *           Invalid request (JSON), or an edit that was not kept because a replacement failed or the JavaScript
+ *           no longer parses (plain text with details; the file is unchanged)
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Details of the error along with file current content and access url
+ *               $ref: '#/components/schemas/FileEditError'
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *       413:
+ *         description: File larger than MAX_EDIT_FILE_BYTES
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FileEditError'
+ *       500:
+ *         description: Unexpected error. The error field holds a JSON string with name, message and code.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FileEditError'
+ *
+ * components:
+ *   schemas:
+ *     TextReplacement:
+ *       type: object
+ *       required:
+ *         - originalText
+ *         - replacementText
+ *       properties:
+ *         originalText:
+ *           type: string
+ *           description: Exact text to replace. Empty only when creating a new or empty file.
+ *         replacementText:
+ *           type: string
+ *           description: Text to put in its place; an empty string deletes the match
+ *     FileEditError:
+ *       type: object
+ *       properties:
+ *         error:
+ *           type: string
+ *       required:
+ *         - error
  */
 const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
     let filePath;
