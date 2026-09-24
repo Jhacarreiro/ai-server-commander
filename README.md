@@ -57,7 +57,7 @@ See [docs/architecture.md](./docs/architecture.md) for request flows, trust boun
 
 ## Requirements
 
-- Node.js **20 or newer**.
+- Node.js **20 or newer**. CI tests Node 20, 22 and 24. Node 20 reached end of life in April 2026 and no longer receives security fixes, so run production on Node 22 or 24.
 - Linux, macOS or another host with a compatible shell.
 - A public HTTPS URL for ChatGPT or remote MCP clients.
 - A dedicated, minimally privileged operating-system account for production use.
