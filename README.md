@@ -164,6 +164,9 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `MAX_INLINE_COMMAND_BYTES` | `65536` | Maximum inline command size in bytes; larger inline commands are rejected with `413`. Send larger payloads in script mode. |
 | `MAX_NOTICE_TEXT` | `8192` | Maximum `/api/notices` text length; longer notices are rejected with `400`. |
 | `MAX_NOTICE_SOURCE` | `256` | Maximum `/api/notices` source length; longer values are rejected with `400`. |
+| `MAX_ACTIVITY_CONTEXTS` | `500` | Maximum saved conversation contexts, and maximum conversation and task activity directories; the least recently used ones are removed first. |
+| `MAX_ACTIVITY_LOG_BYTES` | `8388608` | Size at which each activity log file is rotated to `<file>.1` (one previous file is kept). |
+| `ACTIVITY_LOG_DIR` | `runtime/activity` | Directory for activity logs, status files and saved contexts. |
 | `MAX_ACTIVITY_FIELD` | `256` | Conversation ID, task ID and task title values are truncated to this length before they are stored. |
 | `MAX_MCP_BATCH` | `64` | Maximum JSON-RPC batch size on `/mcp`; larger batches are rejected with `400` / `-32600`. |
 | `MAX_EDIT_FILE_BYTES` | `2097152` | Largest file `/api/read-or-edit-file` reads or edits; larger files get `413`. |
