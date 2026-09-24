@@ -157,6 +157,9 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `OAUTH_AUTH_CODE_TTL_SECONDS` | `300` | Authorization-code lifetime. |
 | `OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime. |
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime. |
+| `MAX_OAUTH_CLIENTS` | `200` | Maximum persisted dynamically registered OAuth clients. At the limit, the oldest client without a live code or token is evicted; registration returns `429` only when every client holds an active grant. |
+| `MAX_CLIENT_NAME_CHARS` | `128` | Maximum stored length of a registered OAuth `client_name`; longer names are truncated. |
+| `RESTART_FORCE_EXIT_MS` | `30000` | Upper bound for `/api/restart` to wait for in-flight responses before the process exits anyway. |
 | `SHELL` | Host default | Shell used for inline execution and as script-mode fallback. |
 | `NODE_ENV` | unset | Standard Node environment label. |
 
