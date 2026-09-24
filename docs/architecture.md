@@ -74,7 +74,7 @@ MVP1 is intentionally read-only. Sending messages or performing account-changing
 | Path | Responsibility |
 |---|---|
 | `main.js` | Process entry point. |
-| `serverModules/pluginServer.js` | Express and Socket.IO server lifecycle. |
+| `serverModules/pluginServer.js` | Express server lifecycle. |
 | `serverModules/apiRoutes.js` | Route registration and authentication boundaries. |
 | `serverModules/auth.js` | REST token and MCP token/OAuth validation. |
 | `serverModules/commandExecutor.js` | Process tracking, timeout, output caps and interruption. |

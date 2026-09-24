@@ -27,6 +27,8 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Removed
 
+- Removed the unused Socket.IO integration (`serverModules/socketSetup.js` was required but never called) together with the `socket.io` runtime dependency, the orphaned `public/whisper.html` demo page and its `public/socketSetup.js` / `public/whisperWorker.js` scripts, and the unused `diff` runtime dependency.
+- Removed leftover debug output (`debugger`, per-character fuzzy-search logging, the startup dump of the full OpenAPI document). The in-memory log returned by `/api/logs` now keeps the most recent 2000 entries instead of growing without bound.
 - Removed the unregistered `api/sentenceVector.js` and `api/transformers.js` modules, including a leftover captured browser request (cookies and a CSRF token) in `transformers.js`, and the unused `initDB` import in `apiRoutes.js`. Firebase initialization remains in `pluginServer.js`.
 
 ### Added
