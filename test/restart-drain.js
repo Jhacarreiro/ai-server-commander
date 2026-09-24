@@ -80,7 +80,8 @@ async function waitForServer() {
         const drainedAt = Date.now();
         assert(drained.status === 200 && drained.body.interrupted === true, 'running command is interrupted and its response is still delivered', JSON.stringify(drained.body));
 
-        const exitedAt = await Promise.race([exited, new Promise((r) => setTimeout(() => r(null), 15000))]);
+        // unref: the fallback timer must not keep this test alive once the server has exited.
+        const exitedAt = await Promise.race([exited, new Promise((r) => setTimeout(() => r(null), 15000).unref())]);
         assert(exitedAt !== null && exitedAt - drainedAt < 3000, 'process exits promptly once in-flight requests drain', exitedAt === null ? 'did not exit' : `${exitedAt - drainedAt}ms`);
         let survivor = false;
         try { process.kill(commandPid, 0); survivor = !/^\d+ \(.*\) Z/.test(fs.readFileSync(`/proc/${commandPid}/stat`, 'utf8')); } catch { survivor = false; }
