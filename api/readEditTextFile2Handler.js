@@ -4,6 +4,7 @@ const {
 } = require( '../serverModules/checkjs' );
 const beautify = require( 'js-beautify' ).js;
 const {
+    redactPaths,
     stringifyError
 } = require( "../serverModules/stringifyError" );
 const {
@@ -245,7 +246,7 @@ const readEditTextFileHandler = ( getURL ) => async ( req, res ) => {
             content = await fs.promises.readFile( filePath, 'utf8' );
         } catch ( error ) {
             console.error( error );
-            return res.status( 400 ).send( `Error reading the file: ${error.message}` );
+            return res.status( 400 ).send( `Error reading the file: ${redactPaths( error.message )}` );
         }
         return res.type( 'text/plain' ).send( content );
     }
