@@ -22,46 +22,13 @@
  *                   type: string
  *                   description: A message indicating that the application is restarting.
  */
-const { killPendingNow, terminateAll } = require('../serverModules/commandExecutor');
-
-function forceExitMs() {
-  const parsed = Number(process.env.RESTART_FORCE_EXIT_MS);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 30000;
-}
+const { shutdown } = require('../serverModules/shutdown');
 
 const exitApplicationHandler = (close) => (req, res) => {
   console.log('Exit request received. Shutting down.');
   res.json({ message: 'Exiting application...' });
-  // Flush the restart response, then wait for close() to finish so
-  // in-flight requests can drain. process.exit is only a last-resort
-  // bound (RESTART_FORCE_EXIT_MS, default 30000) if close never completes.
-  setTimeout(() => {
-    let exited = false;
-    const exitProcess = () => {
-      if (exited) return;
-      exited = true;
-      killPendingNow();
-      process.exit();
-    };
-    const force = setTimeout(exitProcess, forceExitMs());
-    const finish = () => {
-      clearTimeout(force);
-      exitProcess();
-    };
-    // Interrupt running commands first: their requests then complete with
-    // interrupted: true and drain, and no command outlives the process.
-    terminateAll();
-    try {
-      const maybe = typeof close === 'function' ? close(finish) : undefined;
-      if (maybe && typeof maybe.then === 'function') {
-        maybe.then(finish, finish);
-      }
-    } catch (err) {
-      console.error('Restart close failed:', err && err.message ? err.message : err);
-      finish();
-    }
-  }, 100);
+  // Flush the restart response before shutting down.
+  setTimeout(() => shutdown(close), 100);
 };
 
 module.exports = exitApplicationHandler;
-

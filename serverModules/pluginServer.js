@@ -9,6 +9,7 @@ const {initDB} = require("./firebaseDB");
 const fs = require('fs');
 const marked = require('marked');
 const { MAX_SCRIPT_BODY_BYTES } = require('./commandExecutor');
+const { handleShutdownSignals } = require('./shutdown');
 
 module.exports = async () => {
     log('start');
@@ -68,10 +69,10 @@ const htmlContent = marked.parse(data);
     expressApp.use(require('./auth.js')(log, config));
 
     const serverUrl = config.productionDomain;
-    // Canonical listener-close for /api/restart: stop accepts, drop idle
-    // keep-alives, and invoke the handler callback only after in-flight
-    // responses drain. Active command-process cleanup is a separate path.
-    addApi(expressApp, config, () => serverUrl, (done) => {
+    // Canonical listener-close for /api/restart and shutdown signals: stop
+    // accepts, drop idle keep-alives, and invoke the callback only after
+    // in-flight responses drain. Command cleanup is done by shutdown().
+    const closeServer = (done) => {
         // Keep sweeping: a keep-alive connection that finishes its in-flight
         // request after close() would otherwise hold the drain open until the
         // keep-alive timeout.
@@ -82,7 +83,9 @@ const htmlContent = marked.parse(data);
             clearInterval(sweep);
             if (typeof done === 'function') done(error);
         });
-    });
+    };
+    addApi(expressApp, config, () => serverUrl, closeServer);
+    handleShutdownSignals(closeServer);
 
     expressApp.use((err, req, res, next) => {
         if (res.headersSent) return next(err);

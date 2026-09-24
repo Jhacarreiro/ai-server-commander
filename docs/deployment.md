@@ -58,7 +58,7 @@ Environment=MAX_OUTPUT_CHARS=12000
 Environment=MAX_SCRIPT_BODY_BYTES=524288
 Environment=OAUTH_STATE_PATH=/opt/ai-server-commander-state/oauth-state.json
 ExecStart=/usr/bin/node main.js
-Restart=on-failure
+Restart=always
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
@@ -69,6 +69,8 @@ ReadWritePaths=/opt/ai-server-commander/runtime /opt/ai-server-commander-state
 [Install]
 WantedBy=multi-user.target
 ```
+
+`Restart=always` is required for `/api/restart`: the server exits with status 0 after draining, which `Restart=on-failure` would treat as a clean stop and leave the service down. `systemctl stop` is not affected, and `SIGTERM` gets the same drain as `/api/restart` (running commands are interrupted first), bounded by `RESTART_FORCE_EXIT_MS` (default 30 seconds, below systemd's default `TimeoutStopSec` of 90 seconds).
 
 Adjust paths for your Node installation and deployment layout. `ProtectSystem`, `ProtectHome` and `ReadWritePaths` may need changes if commands must access project directories outside the application tree.
 
