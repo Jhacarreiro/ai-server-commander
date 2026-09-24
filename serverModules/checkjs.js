@@ -1,41 +1,30 @@
 const fs = require('fs');
-const path = require('path');
 const espree = require('espree');
 
-function checkJavaScriptFile(filePath) {
-    return new Promise((resolve, reject) => {
-        const fileContent = fs.readFileSync(filePath, {encoding: 'utf8'});
-        const fileLines = fileContent.split('\n');  // Split content into lines
+// Parse as an ES module first and fall back to a classic script, so files
+// that are only valid in one of the two (import/export vs. `with`, legacy
+// octals, non-strict code) are accepted. Only report an issue when both fail.
+function checkJavaScriptContent(fileContent) {
+    const fileLines = fileContent.split('\n');
+    let firstError = null;
+    for (const sourceType of ['module', 'script']) {
         try {
-            espree.parse(fileContent, {
-                ecmaVersion: "latest", // or whichever ECMAScript version you are targeting
-                loc: true,  // Enable line/column location information
-                sourceType: "module",
-            });
-            resolve([]); // No syntax errors
+            espree.parse(fileContent, { ecmaVersion: 'latest', loc: true, sourceType });
+            return Promise.resolve([]);
         } catch (error) {
-            if (error.message.includes("'import' and 'export'")) {
-                try {
-                    espree.parse(fileContent, {
-                        ecmaVersion: "latest", // or whichever ECMAScript version you are targeting
-                        loc: true,  // Enable line/column location information
-                        sourceType: "script",
-                    });
-                } catch (error) {
-                    const errorLine = fileLines[error.lineNumber - 1];
-                    resolve([{
-                        line: error.lineNumber,
-                        column: error.column,
-                        message: error.message,
-                        codeLine: errorLine
-                    }]);
-                }
-            } else {
-                const errorLine = fileLines[error.lineNumber - 1];
-                resolve([{line: error.lineNumber, column: error.column, message: error.message, codeLine: errorLine}]);
-            }
+            if (!firstError) firstError = error;
         }
-    });
+    }
+    return Promise.resolve([{
+        line: firstError.lineNumber,
+        column: firstError.column,
+        message: firstError.message,
+        codeLine: fileLines[firstError.lineNumber - 1]
+    }]);
 }
 
-module.exports = {checkJavaScriptFile};
+async function checkJavaScriptFile(filePath) {
+    return checkJavaScriptContent(await fs.promises.readFile(filePath, { encoding: 'utf8' }));
+}
+
+module.exports = { checkJavaScriptContent, checkJavaScriptFile };
