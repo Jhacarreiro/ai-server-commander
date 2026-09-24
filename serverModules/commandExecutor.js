@@ -32,15 +32,25 @@ function sliceText(text, maxChars) {
 }
 
 const blockedCommandPatterns = [
-    /rm\s+-rf\s+\/(?:\s|$)/i,
+    // rm on the filesystem root in any flag order or spelling (-rf, -fr,
+    // -f -r, --recursive --force), including globs and chaining after "/".
+    // The slash must start a path token, so "rm -rf build/" is not flagged.
+    /\brm\b[^;\n|&]*?--no-preserve-root/i,
+    /\brm\b(?=[^;\n|&]*\s(?:-[a-z]*r|--recursive))(?=[^;\n|&]*\s(?:-[a-z]*f|--force))[^;\n|&]*?\s\/(?:\s|$|[;&|*?[]|\$)/i,
+    /\$\(\s*rm\b/,
+    /`\s*rm\b/,
     /\bmkfs(?:\.|\s|$)/i,
-    /\bdd\s+if=/i,
-    /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/,
+    // dd writing to a device node; reading devices and writing regular files
+    // (including /dev/null and /dev/shm) stay allowed.
+    /\bdd\b[^;\n|&]*?of=["']?\/dev\/(?!(?:null|zero|stdout|stderr)\b|shm\/)/i,
+    // Fork bomb with any function name, including the classic ":".
+    /[A-Za-z_:][A-Za-z0-9_]*\s*\(\s*\)\s*\{\s*[A-Za-z_:][A-Za-z0-9_]*\s*\|\s*[A-Za-z_:][A-Za-z0-9_]*\s*&\s*\}/,
     /\bshutdown\b/i,
     /\breboot\b/i,
     /\bpoweroff\b/i,
     /\bhalt\b/i,
-    /\bpasswd\b/i,
+    // passwd as a command word, not as part of a path such as /etc/passwd.
+    /(?:^|[\s;&|(`])passwd\b/i,
     /\buserdel\b/i,
     /\bgroupdel\b/i,
     /chmod\s+-R\s+777\s+\//i,
