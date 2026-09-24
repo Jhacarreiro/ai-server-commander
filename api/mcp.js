@@ -2,6 +2,7 @@ const { executeCommand, parseRequest } = require('./terminal');
 const { getActivityContext } = require('./activityLog');
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
+const MAX_MCP_BATCH = Math.max(1, Number.parseInt(process.env.MAX_MCP_BATCH || '64', 10) || 64);
 
 function jsonRpcResult(id, result) {
     return { jsonrpc: '2.0', id, result };
@@ -164,7 +165,10 @@ module.exports = function createMcpHandler() {
         if (method === 'prompts/list') return jsonRpcResult(id, { prompts: [] });
 
         if (method === 'tools/call') {
-            if (!params || params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool');
+            if (!params || typeof params.name !== 'string' || !params.name.trim()) {
+                return jsonRpcError(id, -32602, 'tool name is required');
+            }
+            if (params.name !== tool.name) return jsonRpcError(id, -32602, 'Unknown tool: ' + params.name);
 
             let args = params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? { ...params.arguments } : {};
             if (typeof params.arguments === 'string' && params.arguments.trim()) {
@@ -226,6 +230,9 @@ module.exports = function createMcpHandler() {
         }
 
         const messages = Array.isArray(body) ? body : [body];
+        if (messages.length > MAX_MCP_BATCH) {
+            return res.status(400).json(jsonRpcError(null, -32600, `JSON-RPC batch exceeds ${MAX_MCP_BATCH} messages`));
+        }
         const responses = [];
         for (const message of messages) {
             const response = await handleRequest(message, req);

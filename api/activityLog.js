@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { sliceText } = require('../serverModules/commandExecutor');
 
 const runtimeDir = path.join(__dirname, '..', 'runtime');
 const activityRoot = path.join(runtimeDir, 'activity');
@@ -10,12 +11,14 @@ const globalLogPath = path.join(activityRoot, 'global.jsonl');
 const globalStatusPath = path.join(activityRoot, 'status.json');
 const contextsPath = path.join(activityRoot, 'contexts.json');
 const MAX_TEXT = 500;
+const MAX_ACTIVITY_FIELD = Math.max(1, Number.parseInt(process.env.MAX_ACTIVITY_FIELD || '256', 10) || 256);
+function boundField(value) { return value == null ? value : sliceText(String(value), MAX_ACTIVITY_FIELD); }
 const SECRET_PATTERN = /(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._~+\/-]+|\b[A-Za-z0-9_]{0,80}(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*[^\s'";]+)/gi;
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 function ensureRuntimeDir() { ensureDir(runtimeDir); ensureDir(activityRoot); ensureDir(path.join(activityRoot, 'conversations')); ensureDir(path.join(activityRoot, 'tasks')); }
 function redact(value) { return String(value || '').replace(SECRET_PATTERN, '[REDACTED]'); }
-function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = raw.length > sampleLimit ? raw.slice(0, sampleLimit) : raw; const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? text.slice(0, max) + '…' : text; }
+function preview(value, max = MAX_TEXT) { const raw = String(value || ''); const sampleLimit = Math.max(max * 8, 4096); const sample = sliceText(raw, sampleLimit); const text = redact(sample).replace(/\s+/g, ' ').trim(); return raw.length > sample.length || text.length > max ? sliceText(text, max) + '…' : text; }
 function hashText(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12); }
 function safeId(value, fallback = 'unknown') { const raw = String(value || '').trim() || fallback; const safe = raw.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback; return safe.length < raw.length || safe !== raw ? `${safe}_${hashText(raw)}`.slice(0, 96) : safe; }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
@@ -28,12 +31,12 @@ function getActivityContext(req, overrides = {}) {
     const body = req && typeof req.body === 'object' ? req.body : {};
     const query = req && typeof req.query === 'object' ? req.query : {};
     const headers = req && typeof req.headers === 'object' ? req.headers : {};
-    const conversationId = firstValue(overrides.conversationId, query.conversationId, query.conversation_id, body.conversationId, body.conversation_id, headers['openai-conversation-id'], headers['x-conversation-id']) || 'unknown';
+    const conversationId = boundField(firstValue(overrides.conversationId, query.conversationId, query.conversation_id, body.conversationId, body.conversation_id, headers['openai-conversation-id'], headers['x-conversation-id']) || 'unknown');
     const conversationKey = safeId(conversationId, 'unknown');
     const contexts = loadContexts();
     const saved = contexts.conversations[conversationKey] || {};
-    const taskId = firstValue(overrides.taskId, query.taskId, query.task_id, body.taskId, body.task_id, saved.taskId) || 'default';
-    const taskTitle = firstValue(overrides.taskTitle, query.taskTitle, query.task_title, body.taskTitle, body.task_title, saved.taskTitle) || null;
+    const taskId = boundField(firstValue(overrides.taskId, query.taskId, query.task_id, body.taskId, body.task_id, saved.taskId) || 'default');
+    const taskTitle = boundField(firstValue(overrides.taskTitle, query.taskTitle, query.task_title, body.taskTitle, body.task_title, saved.taskTitle) || null);
     const taskKey = safeId(taskId, 'default');
     return { conversationId, conversationKey, taskId, taskKey, taskTitle };
 }

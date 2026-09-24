@@ -10,9 +10,24 @@ function positiveInteger(value, fallback) {
 const MAX_OUTPUT_CHARS = positiveInteger(process.env.MAX_OUTPUT_CHARS, 12000);
 const COMMAND_TIMEOUT_MS = positiveInteger(process.env.COMMAND_TIMEOUT_MS, 120000);
 const MAX_SCRIPT_BODY_BYTES = positiveInteger(process.env.MAX_SCRIPT_BODY_BYTES, 524288);
+// Linux rejects a single argv string above 128 KiB (MAX_ARG_STRLEN); keep
+// inline commands well below it and send larger payloads as scripts.
+const MAX_INLINE_COMMAND_BYTES = positiveInteger(process.env.MAX_INLINE_COMMAND_BYTES, 65536);
 const MAX_CWD_BYTES = 1024;
 const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
+// One default for inline commands and scripts, REST and MCP alike.
+const DEFAULT_SHELL = process.env.SHELL || (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh');
+
+// Cut to at most maxChars UTF-16 units without leaving a lone high surrogate,
+// which JSON consumers such as Python reject ("surrogates not allowed").
+function sliceText(text, maxChars) {
+    if (text.length <= maxChars) return text;
+    let cut = maxChars;
+    const code = text.charCodeAt(cut - 1);
+    if (code >= 0xD800 && code <= 0xDBFF) cut -= 1;
+    return text.slice(0, cut);
+}
 
 const blockedCommandPatterns = [
     /rm\s+-rf\s+\/(?:\s|$)/i,
@@ -72,7 +87,7 @@ function findBlockedPattern(command) {
 function executeBounded(options) {
     const {
         command,
-        shell = process.env.SHELL || '/bin/bash',
+        shell = DEFAULT_SHELL,
         cwd = process.env.HOME || process.cwd(),
         timeoutMs = COMMAND_TIMEOUT_MS,
         maxOutputChars = MAX_OUTPUT_CHARS,
@@ -105,7 +120,7 @@ function executeBounded(options) {
             ].join('').trim();
 
             const outputTruncated = output.length > effectiveMaxOutput;
-            const limitedOutput = outputTruncated ? output.slice(0, effectiveMaxOutput) : output;
+            const limitedOutput = outputTruncated ? sliceText(output, effectiveMaxOutput) : output;
             const exitCode = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
 
             resolve({
@@ -155,7 +170,9 @@ function getActiveCommandIds() {
 
 module.exports = {
     COMMAND_TIMEOUT_MS,
+    DEFAULT_SHELL,
     MAX_CWD_BYTES,
+    MAX_INLINE_COMMAND_BYTES,
     MAX_OUTPUT_CHARS,
     MAX_SCRIPT_BODY_BYTES,
     MAX_SHELL_BYTES,
@@ -166,5 +183,6 @@ module.exports = {
     interruptCommand,
     positiveInteger,
     resolveCwd,
-    sanitizeCwd
+    sanitizeCwd,
+    sliceText
 };
