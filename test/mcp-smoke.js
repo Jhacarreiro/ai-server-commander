@@ -318,6 +318,25 @@ function assert(condition, label, details = '') {
             status: response.status,
             error: response.body.error
         }, null, 2));
+        for (const [params, expected, label] of [
+            [{}, 'tool name is required', 'missing'],
+            [{ name: '  ' }, 'tool name is required', 'blank'],
+            [{ name: 42 }, 'tool name is required', 'non-string'],
+            [{ name: 'unknown_tool_xyz' }, 'Unknown tool: unknown_tool_xyz', 'unknown']
+        ]) {
+            response = await rpc({ jsonrpc: '2.0', id: 40, method: 'tools/call', params });
+            assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === expected, `MCP ${label} tool name -> -32602 ${expected}`, JSON.stringify(response.body));
+        }
+
+        response = await rpc({ jsonrpc: '2.0', id: 41, method: 'tools/call', params: { name: 'run_terminal_command', arguments: { command: 'printf a', script: 'printf b' } } });
+        assert(response.body.error && response.body.error.code === -32602 && response.body.error.message === 'Provide either command or script, not both.', 'MCP rejects both command and script', JSON.stringify(response.body));
+
+        const oversized = Array.from({ length: 65 }, (_, i) => ({ jsonrpc: '2.0', id: 100 + i, method: 'ping' }));
+        response = await rpc(oversized);
+        assert(response.status === 400 && response.body.error && response.body.error.code === -32600 && /batch exceeds 64/.test(response.body.error.message), 'oversized MCP batch is rejected with -32600', JSON.stringify(response.body));
+        const boundary = Array.from({ length: 64 }, (_, i) => ({ jsonrpc: '2.0', id: 200 + i, method: 'ping' }));
+        response = await rpc(boundary);
+        assert(response.status === 200 && Array.isArray(response.body) && response.body.length === 64, 'a 64-message MCP batch is still accepted');
     } finally {
         if (server) server.kill('SIGTERM');
         restoreConfig();
