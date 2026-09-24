@@ -9,6 +9,7 @@ const token = process.env.TEST_TOKEN || 't'.repeat(64);
 const configPath = path.join(root, 'config.json');
 const backupPath = path.join(root, 'config.json.test-backup');
 const logPath = '/tmp/asc-restart-drain.log';
+const pidPath = `/tmp/asc-restart-drain-${process.pid}.pid`;
 let server;
 
 function assert(cond, label, details = '') {
@@ -66,20 +67,27 @@ async function waitForServer() {
         // Keep-alive clients hold their sockets open after a response, which is
         // what would otherwise stall the drain until the keep-alive timeout.
         const agent = new http.Agent({ keepAlive: true });
-        const inFlight = post(agent, '/v1/commands/execute', { command: 'sleep 1; printf drained', timeoutMs: 5000 });
-        await new Promise((r) => setTimeout(r, 200));
+        // The running command ignores SIGTERM, so it also exercises the SIGKILL escalation.
+        fs.rmSync(pidPath, { force: true });
+        const inFlight = post(agent, '/v1/commands/execute', { command: `trap "" TERM; echo $$ > ${pidPath}; while true; do sleep 1; done`, timeoutMs: 60000 });
+        for (let i = 0; i < 40 && !fs.existsSync(pidPath); i++) await new Promise((r) => setTimeout(r, 50));
+        const commandPid = Number(fs.readFileSync(pidPath, 'utf8'));
 
         const restart = await post(agent, '/api/restart');
         assert(restart.status === 200, 'restart is acknowledged');
 
         const drained = await inFlight;
         const drainedAt = Date.now();
-        assert(drained.status === 200 && drained.body.output === 'drained', 'in-flight command response completes during restart', JSON.stringify(drained.body));
+        assert(drained.status === 200 && drained.body.interrupted === true, 'running command is interrupted and its response is still delivered', JSON.stringify(drained.body));
 
         const exitedAt = await Promise.race([exited, new Promise((r) => setTimeout(() => r(null), 15000))]);
         assert(exitedAt !== null && exitedAt - drainedAt < 3000, 'process exits promptly once in-flight requests drain', exitedAt === null ? 'did not exit' : `${exitedAt - drainedAt}ms`);
+        let survivor = false;
+        try { process.kill(commandPid, 0); survivor = !/^\d+ \(.*\) Z/.test(fs.readFileSync(`/proc/${commandPid}/stat`, 'utf8')); } catch { survivor = false; }
+        assert(!survivor, 'no command process survives the restart', String(commandPid));
         agent.destroy();
     } finally {
+        fs.rmSync(pidPath, { force: true });
         if (server && server.exitCode === null) server.kill('SIGTERM');
         restoreConfig();
     }
