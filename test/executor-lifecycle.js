@@ -31,8 +31,14 @@ function alive(pid) {
 }
 const run = (command, extra = {}) => executeBounded({ command, shell: '/bin/sh', cwd: tmp, timeoutMs: 20000, ...extra });
 
+// The deadline timer is cleared once the promise settles, so it does not keep
+// the test process alive after the last assertion.
 function withDeadline(promise, ms, label) {
-    return Promise.race([promise, delay(ms).then(() => { throw new Error(label + ' exceeded ' + ms + 'ms'); })]);
+    let timer;
+    const deadline = new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(label + ' exceeded ' + ms + 'ms')), ms);
+    });
+    return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
 async function waitForPid(file) {
