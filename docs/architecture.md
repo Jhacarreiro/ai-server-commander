@@ -110,7 +110,7 @@ record command_finished
 return REST JSON or MCP result
 ```
 
-Timeouts and explicit interruption send SIGTERM to the command's process group on POSIX hosts and SIGKILL after a short grace period, so pipelines, background children and commands that ignore SIGTERM do not outlive the request. At most `MAX_CONCURRENT_COMMANDS` commands run at once; `/api/restart` interrupts every running command before the process exits.
+Timeouts and explicit interruption send SIGTERM to the command's process group on POSIX hosts and SIGKILL after a short grace period, so pipelines, background children and commands that ignore SIGTERM do not outlive the request. At most `MAX_CONCURRENT_COMMANDS` commands run at once. `/api/restart`, `SIGTERM` and `SIGINT` interrupt every running command, wait for in-flight responses and then exit, so no command outlives the server; a second signal exits immediately.
 
 ## State
 
