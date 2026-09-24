@@ -1,6 +1,6 @@
 {
   "port": 3000,
   "productionDomain": "https://commander.example.com",
-  "authToken": "replace-with-a-long-random-secret",
-  "mcpToken": "replace-with-a-separate-long-random-secret"
+  "authToken": "replace-me",
+  "mcpToken": "replace-me-too"
 }
