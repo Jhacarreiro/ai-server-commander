@@ -8,6 +8,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Contributors: `npm test` runs every `test/*.js` file in turn (new files are picked up automatically), bounds each file by `TEST_TIMEOUT_MS`, stops a timed-out file together with any server it started, and ends with a per-file summary; `npm test -- <name>` runs a subset. `npm run check` syntax-checks every JavaScript file instead of a fixed list of 13. The per-file `test:*` scripts are removed. CI also runs on Node 24.
 - The published OpenAPI document matches the server: every operation has a unique `operationId` (the command operations had none, which the GPT Actions builder needs to expose them; `POST /api/runTerminalScript` is `runTerminalScript`), execute routes document all statuses they return (202, 403, 409, 429 and 500 included) with typed error and operation-status schemas, `GET /api/logs` documents its `{ logs }` envelope, and `/api/read-or-edit-file` documents its plain-text responses, request fields (`replacement`, `mergeText`) and 413/500 errors.
 - `port` must be a decimal integer from 1 to 65535. Values such as `3000abc` or `1e3` were silently parsed as 3000 and 1; an existing `config.json` with such a value keeps starting on the previously parsed port with a warning and is not rewritten. The first-run wizard asks again on invalid input instead of exiting, and Ctrl-D cancels it cleanly.
 - A configuration or startup error is reported as one `Failed to start server: ...` line with exit status 1 instead of an unhandled rejection and stack trace.

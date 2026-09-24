@@ -21,6 +21,8 @@ npm test
 npm audit --omit=dev
 ```
 
+`npm run check` syntax-checks every JavaScript file in the project. `npm test` runs each `test/*.js` file in turn and ends with a per-file summary; new test files are picked up automatically. To run a subset, pass parts of file names, for example `npm test -- mcp oauth`. `TEST_TIMEOUT_MS` (default 120000) bounds each file.
+
 An audit advisory does not automatically justify a forced dependency migration. Explain compatibility and test impact for major upgrades.
 
 ## Pull requests
