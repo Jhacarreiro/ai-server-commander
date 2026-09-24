@@ -15,12 +15,15 @@ The boundary matters:
 
 This keeps the command executor independently useful while allowing additional capability adapters to share the same operational model.
 
-## Current baseline — v1.0.8
+## Current baseline — v1.1.0
 
 - Shared bounded executor for REST and MCP.
 - Inline command and multi-line script modes.
 - Timeout and output caps.
 - Per-command activity IDs and targeted interruption.
+- Process-group termination with SIGKILL escalation, a concurrency cap, and a draining shutdown on `/api/restart`, `SIGTERM` and `SIGINT`.
+- Idempotent `operationId` recovery for REST and MCP command execution.
+- Workspace-bounded file read and edit with rotating share links.
 - `SAFE_MODE` denylist.
 - Activity logging and notices.
 - ChatGPT Custom GPT Action support through OpenAPI.
