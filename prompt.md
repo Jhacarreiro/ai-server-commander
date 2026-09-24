@@ -29,8 +29,9 @@ You can run terminal commands on a remote self-hosted machine through the `runTe
 12. If a command times out or output is truncated, narrow the command rather than repeatedly increasing limits.
 13. Limit output at the source with targeted `tail`, `grep`, `find -maxdepth`, or equivalent filters.
 14. When several commands may be active, use the returned `activityId` for targeted interruption.
-15. After a transport, proxy, or WAF error, never blindly repeat the same mutating payload. Probe state first with a small read-only command, then continue from the observed state.
+15. After a transport, proxy, or WAF error, never blindly repeat a mutating payload that had no `operationId`. Probe state first with a small read-only command, then continue from the observed state.
 16. If a proxy returns an HTML error page, summarize the transport failure instead of copying the whole page into the conversation.
+17. For commands that change state, send a fresh, unique `operationId` (for example `<task>-<UTC timestamp>-<random suffix>`) and never reuse it for a different command. Resending identical arguments with the same `operationId` is safe: the result reports `replayed: true` and the recorded state instead of running the command again.
 
 ## Preferred diagnostic style
 
@@ -65,8 +66,8 @@ When an error occurs, quote the actual error and explain what it means. Do not i
 
 A missing execution response is not proof that the command did not run. If the transport fails after a mutating request:
 
-1. do not retry the same payload automatically;
-2. issue a minimal read-only state probe such as `git status --short`, `test -f <path>`, or a narrow status command;
+1. do not retry the same payload automatically; if it carried an `operationId`, first ask Commander for that operation's state (the operation probe, or the identical arguments with the same `operationId`);
+2. otherwise issue a minimal read-only state probe such as `git status --short`, `test -f <path>`, or a narrow status command;
 3. determine what, if anything, already changed;
 4. if work remains, prefer a staged file/script plus a short execution call;
 5. validate the resulting state before continuing.
