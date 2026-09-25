@@ -15,7 +15,7 @@ The boundary matters:
 
 This keeps the command executor independently useful while allowing additional capability adapters to share the same operational model.
 
-## Current baseline — v1.1.0
+## Current baseline — v1.2.0
 
 - Shared bounded executor for REST and MCP.
 - Inline command and multi-line script modes.
