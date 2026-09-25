@@ -26,7 +26,18 @@ const {
     assert.strictEqual(loaded.port, 3000);
     assert.strictEqual(loaded.productionDomain, 'https://commander.example.com');
     assert.strictEqual(loaded.useLocalTunnel, false);
+    assert.strictEqual(Object.hasOwn(loaded, 'host'), false);
     console.log('PASS existing configuration loads and normalizes');
+
+    for (const host of ['127.0.0.1', '::1', '0.0.0.0', '::', 'localhost']) {
+        const hostPath = path.join(root, 'host-config.json');
+        fs.writeFileSync(hostPath, JSON.stringify({ ...loaded, host: ` ${host} ` }));
+        assert.strictEqual(loadConfigFile(hostPath).host, host);
+    }
+    for (const host of ['', '  ', null, 0, false, [], {}, 'http://localhost', 'local host', 'localhost:3000', '127.0.0.1:3000', '[::1]']) {
+        assert.throws(() => validateConfig({ ...loaded, host }), /Configuration host must be/);
+    }
+    console.log('PASS optional listen host loads IPv4, IPv6 and hostnames and rejects invalid values');
 
     const bomPath = path.join(root, 'bom-config.json');
     const bomSource = {
@@ -66,6 +77,8 @@ const {
         ask: async () => answers.shift()
     });
     assert.strictEqual(created.port, 4100);
+    assert.strictEqual(Object.hasOwn(created, 'host'), false);
+    assert.strictEqual(Object.hasOwn(loadConfigFile(createdPath), 'host'), false);
     assert.strictEqual(created.productionDomain, 'https://new.example.com');
     assert.strictEqual(created.authToken.length, 64);
     assert.strictEqual(created.mcpToken.length, 64);

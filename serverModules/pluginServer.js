@@ -17,6 +17,7 @@ module.exports = async () => {
     const config = await configPromise;
     log('got config', {
         port: config.port,
+        host: config.host,
         productionDomain: config.productionDomain,
         hasAuthToken: Boolean(config.authToken),
         hasMcpToken: Boolean(config.mcpToken)
@@ -110,8 +111,11 @@ const htmlContent = marked.parse(data);
         console.error('Failed to start server:', error && error.message ? error.message : error);
         process.exit(1);
     });
-    server.listen(config.port, () => {
-        log('Server running on http://localhost:' + config.port);
+    // Undefined host preserves Node's existing all-interface behavior.
+    server.listen(config.port, config.host, () => {
+        const address = server.address();
+        const host = address.family === 'IPv6' ? '[' + address.address + ']' : address.address;
+        log('Server running on http://' + host + ':' + address.port);
         setURL(serverUrl);
     });
     return server;

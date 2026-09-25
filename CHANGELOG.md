@@ -6,7 +6,9 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Optional `config.json` `host` selects the listen hostname or IP address. Omitting it preserves the existing all-interface default, including IPv6 where available. The setup wizard keeps omitting it, invalid values fail startup, and the startup log reports the actual bound address. No existing configuration is rewritten.
 
 ## [1.1.0] - 2026-09-25
 

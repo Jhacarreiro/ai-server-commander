@@ -38,6 +38,28 @@ sudo chmod 600 config.json
 
 Edit `config.json` with the public HTTPS origin and fresh random tokens.
 
+## Listen address
+
+`host` is optional. Existing configurations and the setup wizard omit it, keeping
+the current all-interface listener: Node uses `::` where IPv6 is available or
+`0.0.0.0` otherwise. An IPv6 unspecified listener may also accept IPv4 connections,
+depending on the operating system. No upgrade automatically restricts the bind.
+
+For a reverse proxy on the same host and network namespace, add
+`"host": "127.0.0.1"` to the private `config.json` before starting the service.
+This matches the Nginx example below. `"host": "::1"` selects IPv6 loopback;
+adjust the proxy upstream accordingly. Supply an address or hostname, not a URL,
+port, or bracketed IPv6 address. Empty/non-string values are rejected; an address
+that cannot be resolved or bound fails startup instead of falling back to all interfaces.
+
+A proxy in another container or on another machine cannot reach the service's
+loopback address. In that topology, choose a reachable interface or leave `host`
+unset and restrict access using network/firewall policy. `productionDomain` is
+independent: it remains the externally visible HTTPS origin.
+
+The startup message reports the actual bound address. Changing `host` requires a
+service restart; verify both the listener and proxy access after any planned change.
+
 ## systemd example
 
 ```ini

@@ -135,11 +135,19 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | Key | Required | Purpose |
 |---|---:|---|
 | `port` | Yes | Local TCP port used by the Node server. |
+| `host` | No | Listen hostname or IP address (no scheme or port). Omitted: preserves Node's all-interface default (`::` where IPv6 is available, otherwise `0.0.0.0`). Use `127.0.0.1` for an IPv4 loopback-only listener. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
+
+The setup wizard leaves `host` unset for compatibility. To restrict the listener,
+add `"host": "127.0.0.1"` to your private configuration before starting the server.
+Use `"host": "::1"` for IPv6 loopback; IPv6 addresses are not bracketed in this field.
+An empty or non-string `host` is rejected. `productionDomain` describes the public
+URL and does not control the bind address. See the [deployment guide](./docs/deployment.md#listen-address)
+before restricting access through a container or remote proxy.
 
 LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency chain could not be updated safely. Existing configurations with `useLocalTunnel: true` now fail with migration guidance. Use a maintained HTTPS reverse proxy or tunnel and set `productionDomain` explicitly.
 
