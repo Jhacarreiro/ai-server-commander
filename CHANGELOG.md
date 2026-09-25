@@ -8,7 +8,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 Nothing yet.
 
-## [1.1.0] - 2026-09-24
+## [1.1.0] - 2026-09-25
 
 ### Upgrade notes
 
