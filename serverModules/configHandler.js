@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
+const { isIP } = require('net');
 const path = require('path');
 const readline = require('readline/promises');
 
@@ -67,6 +68,18 @@ function normalizeProductionDomain(value) {
     return raw;
 }
 
+function normalizeHost(value) {
+    // Omission intentionally keeps Node's unspecified-address default,
+    // including IPv6 where available. An empty value must not silently
+    // turn an intended restricted listener into an all-interface listener.
+    if (value === undefined) return undefined;
+    if (typeof value !== 'string' || !value.trim() || /\s|\//.test(value.trim()) ||
+        (/[:\[\]]/.test(value) && !isIP(value.trim()))) {
+        throw new Error('Configuration host must be a non-empty hostname or IP address, without a URL scheme or port. Omit host to listen on all interfaces.');
+    }
+    return value.trim();
+}
+
 function validateConfig(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
         throw new Error('Configuration must be a JSON object.');
@@ -93,6 +106,7 @@ function validateConfig(input) {
     return {
         ...input,
         port: normalizePort(input.port),
+        ...(input.host !== undefined ? { host: normalizeHost(input.host) } : {}),
         useLocalTunnel: false,
         localTunnelSubdomain: null,
         productionDomain: normalizeProductionDomain(input.productionDomain),
