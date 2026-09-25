@@ -11,7 +11,7 @@ It exposes the same execution core through two primary client adapters:
 - **REST/OpenAPI** for ChatGPT Custom GPT Actions and automation clients.
 - **Remote MCP + OAuth** for Claude and other MCP-capable clients.
 
-The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.1.0 the production capability is the bounded host command executor.
+The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.2.0 the production capability is the bounded host command executor.
 
 The longer-term direction is broader than terminal access: Commander should remain a small, auditable control plane that can expose typed capabilities such as read-only filesystem operations, remote-host adapters and browser/session automation while keeping authentication, policy, activity state and client transports at clear boundaries. A future mobile or chat UI should consume these capabilities rather than become a dependency of the core server.
 
