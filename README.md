@@ -138,6 +138,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | `host` | No | Listen hostname or IP address (no scheme or port). Omitted: preserves Node's all-interface default (`::` where IPv6 is available, otherwise `0.0.0.0`). Use `127.0.0.1` for an IPv4 loopback-only listener. |
 | `productionDomain` | Yes | Exact public origin, such as `https://commander.example.com`. Required for correct remote OAuth metadata behind a proxy. |
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
+| `confirmationPolicy` | No | Per-category human-confirmation policy advertised to MCP clients. Defaults: `write=false`; `delete`, `restart`, `permissions`, `credentials` = `true`. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
@@ -433,7 +434,7 @@ Recommended production controls:
 5. Use separate high-entropy `authToken` and `mcpToken` values.
 6. Rotate tokens after accidental disclosure.
 7. Review activity and system service logs.
-8. Require human confirmation for commands that write, delete, restart services, change permissions or access credentials.
+8. Configure `confirmationPolicy` for terminal commands that need human confirmation. By default, ordinary writes are allowed without an extra confirmation (`write: false`), while delete, restart, permission-change and credential-access categories require confirmation.
 
 See [SECURITY.md](./SECURITY.md) for vulnerability reporting.
 

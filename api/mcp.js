@@ -1,5 +1,6 @@
 const { executeCommand, parseRequest } = require('./terminal');
 const { getActivityContext } = require('./activityLog');
+const { confirmationPolicyText, normalizeConfirmationPolicy } = require('../serverModules/confirmationPolicy');
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const MAX_MCP_BATCH = Math.max(1, Number.parseInt(process.env.MAX_MCP_BATCH || '64', 10) || 64);
@@ -40,7 +41,9 @@ function commandToText(result) {
     return parts.join('\n').trim();
 }
 
-module.exports = function createMcpHandler() {
+module.exports = function createMcpHandler(config = {}) {
+    const confirmationPolicy = normalizeConfirmationPolicy(config.confirmationPolicy);
+    const confirmationInstructions = confirmationPolicyText(confirmationPolicy);
     const packageVersion = (() => {
         try { return require('../package.json').version || '0.0.0'; }
         catch (_) { return '0.0.0'; }
@@ -80,7 +83,7 @@ module.exports = function createMcpHandler() {
     const tool = {
         name: 'run_terminal_command',
         title: 'Run terminal command',
-        description: 'Use this when the user explicitly asks to run a bounded shell command or multi-line script on the AI Server Commander host. The tool can modify or delete data and can reach external systems, so show the exact command and obtain any required confirmation before calling it.',
+        description: `Use this when the user explicitly asks to run a bounded shell command or multi-line script on the AI Server Commander host. The tool can modify or delete data and can reach external systems. Show the exact command. ${confirmationInstructions}`,
         annotations: {
             readOnlyHint: false,
             destructiveHint: true,
@@ -156,7 +159,7 @@ module.exports = function createMcpHandler() {
                 protocolVersion: MCP_PROTOCOL_VERSION,
                 capabilities: { tools: {} },
                 serverInfo: { name: 'ai-server-commander', version: packageVersion },
-                instructions: 'This MCP server exposes bounded remote terminal execution on the configured host. Use run_terminal_command only with explicit user approval, show the exact command, and prefer short, verifiable commands. Multi-line scripts are supported with mode=script.'
+                instructions: `This MCP server exposes bounded remote terminal execution on the configured host. Show the exact command before run_terminal_command and prefer short, verifiable commands. Multi-line scripts are supported with mode=script. ${confirmationInstructions}`
             });
         }
         if (method === 'ping') return jsonRpcResult(id, {});

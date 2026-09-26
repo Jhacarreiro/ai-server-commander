@@ -145,6 +145,7 @@ function assert(condition, label, details = '') {
         response = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
         assert(response.status === 200 && response.body.result.serverInfo.version && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP initialize');
         assert(response.body.result.protocolVersion === '2025-03-26', 'MCP initialize advertises the server protocol version');
+        assert(/delete data/.test(response.body.result.instructions) && !/write or modify data/.test(response.body.result.instructions), 'MCP advertises default confirmation policy with ordinary writes disabled');
 
         response = await rpc({ jsonrpc: '2.0', id: 11, method: 'initialize', params: { protocolVersion: '2024-11-05' } });
         assert(response.status === 200 && response.body.result.protocolVersion === '2025-03-26', 'MCP initialize does not echo an older client protocol version');

@@ -3,6 +3,7 @@ const fs = require('fs');
 const { isIP } = require('net');
 const path = require('path');
 const readline = require('readline/promises');
+const { normalizeConfirmationPolicy } = require('./confirmationPolicy');
 
 const DEFAULT_CONFIG_PATH = path.resolve(process.env.CONFIG_FILE_PATH || './config.json');
 
@@ -111,6 +112,7 @@ function validateConfig(input) {
         localTunnelSubdomain: null,
         productionDomain: normalizeProductionDomain(input.productionDomain),
         authToken,
+        confirmationPolicy: normalizeConfirmationPolicy(input.confirmationPolicy),
         ...(mcpToken ? { mcpToken } : {})
     };
 }

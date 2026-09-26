@@ -26,6 +26,7 @@ const {
     assert.strictEqual(loaded.port, 3000);
     assert.strictEqual(loaded.productionDomain, 'https://commander.example.com');
     assert.strictEqual(loaded.useLocalTunnel, false);
+    assert.deepStrictEqual(loaded.confirmationPolicy, { write: false, delete: true, restart: true, permissions: true, credentials: true });
     assert.strictEqual(Object.hasOwn(loaded, 'host'), false);
     console.log('PASS existing configuration loads and normalizes');
 
@@ -69,6 +70,23 @@ const {
         authToken: 'a'.repeat(64)
     }), /LocalTunnel support was removed/);
     console.log('PASS legacy LocalTunnel configuration fails with migration guidance');
+
+    const customPolicy = validateConfig({
+        port: 3000,
+        useLocalTunnel: false,
+        productionDomain: 'https://commander.example.com',
+        authToken: 'a'.repeat(64),
+        confirmationPolicy: { write: true, delete: false }
+    });
+    assert.deepStrictEqual(customPolicy.confirmationPolicy, { write: true, delete: false, restart: true, permissions: true, credentials: true });
+    assert.throws(() => validateConfig({
+        port: 3000,
+        useLocalTunnel: false,
+        productionDomain: 'https://commander.example.com',
+        authToken: 'a'.repeat(64),
+        confirmationPolicy: { write: 'yes' }
+    }), /confirmationPolicy\.write must be a boolean/);
+    console.log('PASS confirmation policy defaults and per-category overrides are validated');
 
     const createdPath = path.join(root, 'created.json');
     const answers = ['4100', 'https://new.example.com/'];
