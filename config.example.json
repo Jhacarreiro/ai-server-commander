@@ -4,6 +4,7 @@
   "authToken": "replace-me",
   "mcpToken": "replace-me-too",
   "confirmationPolicy": {
+    "read": false,
     "write": false,
     "delete": true,
     "restart": true,

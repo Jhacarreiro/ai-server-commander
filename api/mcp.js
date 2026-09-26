@@ -83,10 +83,10 @@ module.exports = function createMcpHandler(config = {}) {
     const tool = {
         name: 'run_terminal_command',
         title: 'Run terminal command',
-        description: `Use this when the user explicitly asks to run a bounded shell command or multi-line script on the AI Server Commander host. The tool can modify or delete data and can reach external systems. Show the exact command. ${confirmationInstructions}`,
+        description: `Use this when the user asks to run a bounded shell command or multi-line script on the AI Server Commander host. Read-only inspection commands do not require human confirmation by default. The tool can also modify or delete data and reach external systems; confirmation for those operations is governed by the server policy. Show the exact command. ${confirmationInstructions}`,
         annotations: {
             readOnlyHint: false,
-            destructiveHint: true,
+            destructiveHint: false,
             openWorldHint: true,
             idempotentHint: false
         },
@@ -159,7 +159,7 @@ module.exports = function createMcpHandler(config = {}) {
                 protocolVersion: MCP_PROTOCOL_VERSION,
                 capabilities: { tools: {} },
                 serverInfo: { name: 'ai-server-commander', version: packageVersion },
-                instructions: `This MCP server exposes bounded remote terminal execution on the configured host. Show the exact command before run_terminal_command and prefer short, verifiable commands. Multi-line scripts are supported with mode=script. ${confirmationInstructions}`
+                instructions: `This MCP server exposes bounded remote terminal execution on the configured host. Read-only inspection commands are allowed without human confirmation by default. Show the exact command before run_terminal_command and prefer short, verifiable commands. Multi-line scripts are supported with mode=script. ${confirmationInstructions}`
             });
         }
         if (method === 'ping') return jsonRpcResult(id, {});

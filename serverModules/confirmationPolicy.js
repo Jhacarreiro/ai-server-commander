@@ -1,4 +1,5 @@
 const DEFAULT_CONFIRMATION_POLICY = Object.freeze({
+    read: false,
     write: false,
     delete: true,
     restart: true,
@@ -7,6 +8,7 @@ const DEFAULT_CONFIRMATION_POLICY = Object.freeze({
 });
 
 const POLICY_LABELS = Object.freeze({
+    read: 'read or inspect data',
     write: 'write or modify data',
     delete: 'delete data',
     restart: 'restart services',

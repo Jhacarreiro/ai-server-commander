@@ -145,7 +145,7 @@ function assert(condition, label, details = '') {
         response = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
         assert(response.status === 200 && response.body.result.serverInfo.version && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP initialize');
         assert(response.body.result.protocolVersion === '2025-03-26', 'MCP initialize advertises the server protocol version');
-        assert(/delete data/.test(response.body.result.instructions) && !/write or modify data/.test(response.body.result.instructions), 'MCP advertises default confirmation policy with ordinary writes disabled');
+        assert(/delete data/.test(response.body.result.instructions) && !/read or inspect data/.test(response.body.result.instructions) && !/write or modify data/.test(response.body.result.instructions), 'MCP advertises default confirmation policy with reads and ordinary writes disabled');
 
         response = await rpc({ jsonrpc: '2.0', id: 11, method: 'initialize', params: { protocolVersion: '2024-11-05' } });
         assert(response.status === 200 && response.body.result.protocolVersion === '2025-03-26', 'MCP initialize does not echo an older client protocol version');
@@ -170,7 +170,7 @@ function assert(condition, label, details = '') {
         assert(listedTool.title === 'Run terminal command', 'MCP tool has a human-readable title');
         assert(listedTool.outputSchema && listedTool.outputSchema.properties.activityId, 'MCP tool declares output schema');
         assert(listedTool.outputSchema.additionalProperties === false && listedTool.outputSchema.required.includes('notices'), 'MCP output schema is exact and complete');
-        assert(listedTool.annotations && listedTool.annotations.readOnlyHint === false && listedTool.annotations.destructiveHint === true && listedTool.annotations.openWorldHint === true && listedTool.annotations.idempotentHint === false, 'MCP tool declares risk annotations');
+        assert(listedTool.annotations && listedTool.annotations.readOnlyHint === false && listedTool.annotations.destructiveHint === false && listedTool.annotations.openWorldHint === true && listedTool.annotations.idempotentHint === false, 'MCP tool declares risk annotations');
         assert(Array.isArray(listedTool.securitySchemes) && listedTool.securitySchemes[0].type === 'oauth2' && listedTool.securitySchemes[0].scopes.includes('terminal'), 'MCP tool declares OAuth security scheme');
         assert(listedTool._meta && JSON.stringify(listedTool._meta.securitySchemes) === JSON.stringify(listedTool.securitySchemes), 'MCP tool mirrors security scheme in _meta');
 
