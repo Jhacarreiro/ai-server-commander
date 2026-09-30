@@ -385,6 +385,7 @@ class ChatGPTWebWatcher {
         if (!currentId) return finish({ status: 'idle', reason: 'conversation_not_open', ...resetConversation });
 
         if (conversationChanged) {
+            const hasAssistantResponse = Boolean(String(snap.assistantText || '').trim());
             return finish({
                 status: 'stabilizing',
                 reason: 'conversation_changed',
@@ -392,7 +393,7 @@ class ChatGPTWebWatcher {
                 candidateSince: null,
                 conversationSince: nowIso,
                 conversationSawGenerating: false,
-                primedConversationId: null
+                primedConversationId: hasAssistantResponse ? null : currentId
             });
         }
 

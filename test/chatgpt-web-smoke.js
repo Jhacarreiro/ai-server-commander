@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ChatGPTWebWatcher, conversationIdFromUrl, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
+const { ChatGPTWebWatcher, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
 
 const snap = (overrides = {}) => ({
     url: 'https://chatgpt.com/c/conv-1', authenticated: true, assistantText: 'Answer A', generating: false, ...overrides
@@ -130,6 +130,29 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(r.reason, 'baseline_recorded');
     assert.strictEqual(r.newResponse, false);
     assert.strictEqual(watcher.getPending().pending, null);
+
+    // Regression: a brand-new conversation with no assistant response primes immediately,
+    // so the first stable assistant response emits even if the busy state was not observed.
+    const newChatState = path.join(dir, 'new-chat.json');
+    let newChatNow = Date.parse('2026-01-01T01:00:00.000Z');
+    let newChatCurrent = snap({ url: 'https://chatgpt.com/c/new-chat', assistantText: '' });
+    const newChatWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: newChatState, primeMs: 20000 },
+        snapshotReader: async () => newChatCurrent,
+        now: () => newChatNow
+    });
+    let newChatResult = await newChatWatcher.poll();
+    assert.strictEqual(newChatResult.reason, 'conversation_changed');
+    assert.strictEqual(readState(newChatState).primedConversationId, 'new-chat');
+    newChatCurrent = snap({ url: 'https://chatgpt.com/c/new-chat', assistantText: 'First answer' });
+    newChatNow += 1000;
+    newChatResult = await newChatWatcher.poll();
+    assert.strictEqual(newChatResult.reason, 'response_candidate_changed');
+    newChatNow += 1000;
+    newChatResult = await newChatWatcher.poll();
+    assert.strictEqual(newChatResult.reason, 'new_response');
+    assert.strictEqual(newChatResult.newResponse, true);
+    assert.strictEqual(newChatWatcher.getPending().pending.text, 'First answer');
 
     // New response in conv-2 still emits normally after priming.
     current = snap({ url: 'https://chatgpt.com/c/conv-2', generating: true, assistantText: 'New conv 2 partial' });
