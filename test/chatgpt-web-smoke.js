@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { ChatGPTWebWatcher, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
+const { nextPollDelay } = require('../api/chatgptWeb');
 
 const snap = (overrides = {}) => ({
     url: 'https://chatgpt.com/c/conv-1', authenticated: true, assistantText: 'Answer A', generating: false, ...overrides
@@ -12,6 +13,9 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(conversationIdFromUrl('https://chatgpt.com/c/abc'), 'abc');
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).enabled, false);
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).primeMs, 20000);
+    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, null), 15000);
+    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: 'https://chatgpt.com/c/x', pollMs: 5000 } }, null), 5000);
+    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, { reason: 'conversation_list_failed', lastError: 'conversation list HTTP 429' }), 60000);
     const selected = selectCdpTarget([
         { type: 'page', url: 'https://chatgpt.com/c/other', webSocketDebuggerUrl: 'ws://other' },
         { type: 'page', url: 'https://chatgpt.com/c/conv-1', webSocketDebuggerUrl: 'ws://wanted' }
