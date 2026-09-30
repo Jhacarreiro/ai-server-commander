@@ -130,6 +130,12 @@ function assert(condition, label, details = '') {
 
         const initializeBody = { jsonrpc: '2.0', id: 10, method: 'initialize', params: { protocolVersion: '2025-03-26' } };
 
+        response = await request('POST', '/mcp', initializeBody, {
+            Authorization: `Bearer ${mcpToken}`,
+            'openai-conversation-id': 'test-chatgpt-conversation'
+        });
+        assert(response.status === 403 && /disabled by default/i.test(String(response.body.error || '')), 'ChatGPT MCP is opt-in by default');
+
         response = await request('POST', '/mcp', initializeBody, { Authorization: `Bearer ${mcpToken}` });
         assert(response.status === 200 && response.body.result && response.body.result.serverInfo.name === 'ai-server-commander', 'MCP Bearer pre-shared token');
 

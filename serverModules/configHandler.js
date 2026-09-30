@@ -97,6 +97,9 @@ function validateConfig(input) {
         throw new Error('authToken must contain at least 32 characters.');
     }
     const mcpToken = input.mcpToken == null ? undefined : String(input.mcpToken).trim();
+    if (input.chatgptMcpEnabled !== undefined && typeof input.chatgptMcpEnabled !== 'boolean') {
+        throw new Error('chatgptMcpEnabled must be a boolean when provided.');
+    }
     if (mcpToken && REJECTED_PLACEHOLDER_TOKENS.has(mcpToken)) {
         throw new Error('mcpToken must not be a documented example placeholder; generate a real random secret (for example: openssl rand -hex 32).');
     }
@@ -113,6 +116,7 @@ function validateConfig(input) {
         productionDomain: normalizeProductionDomain(input.productionDomain),
         authToken,
         confirmationPolicy: normalizeConfirmationPolicy(input.confirmationPolicy),
+        chatgptMcpEnabled: input.chatgptMcpEnabled === true,
         ...(mcpToken ? { mcpToken } : {})
     };
 }

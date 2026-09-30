@@ -96,7 +96,8 @@ Minimal configuration:
   "port": 3000,
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-me",
-  "mcpToken": "replace-me-too"
+  "mcpToken": "replace-me-too",
+  "chatgptMcpEnabled": false
 }
 ```
 
@@ -140,6 +141,7 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 | `authToken` | Yes | Bearer token for REST and approval code for the built-in OAuth consent page. |
 | `confirmationPolicy` | No | Per-category human-confirmation policy advertised to MCP clients. Defaults: `read=false`, `write=false`; `delete`, `restart`, `permissions`, `credentials` = `true`. |
 | `mcpToken` | No | Separate pre-shared token for MCP clients that support token auth. Falls back to `authToken` when omitted. |
+| `chatgptMcpEnabled` | No | Allows ChatGPT/OpenAI clients to use the MCP endpoint when `true`. Defaults to `false`; ChatGPT should use the REST/OpenAPI Action path unless MCP usage is explicitly intended. Claude and other MCP clients remain available. |
 
 `config.json` contains secrets and is ignored by Git. Keep it mode `600` and never paste it into issues or logs.
 
@@ -190,7 +192,7 @@ See [.env.example](./.env.example). The application does not automatically load 
 
 ## ChatGPT Custom GPT Actions
 
-Custom GPT Actions use the REST/OpenAPI adapter and remain the most broadly compatible ChatGPT path.
+Custom GPT Actions use the REST/OpenAPI adapter and are the default ChatGPT path. ChatGPT/OpenAI access to `/mcp` is disabled unless `chatgptMcpEnabled` is explicitly set to `true`; this keeps ChatGPT on the regular Action path by default while preserving MCP for Claude and other clients.
 
 1. Deploy AI Server Commander on a public HTTPS origin.
 2. In the Custom GPT builder, add an Action.

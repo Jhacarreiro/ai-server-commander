@@ -6,6 +6,10 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+### Changed
+
+- ChatGPT/OpenAI MCP access is now opt-in through `chatgptMcpEnabled: true`. The default remains the REST/OpenAPI Custom GPT Action path, while Claude and other MCP clients continue to use `/mcp`. OpenAI-specific MCP metadata is only advertised when the opt-in is enabled.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

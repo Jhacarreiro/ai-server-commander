@@ -144,6 +144,13 @@ function addOAuthRoutes(app, config) {
 
     app.post('/oauth/register', (req, res) => {
         const body = req.body || {};
+        const requestedClientName = typeof body.client_name === 'string' ? body.client_name.trim() : '';
+        if (config.chatgptMcpEnabled !== true && /(?:openai|chatgpt)/i.test(requestedClientName)) {
+            return sendJson(res, {
+                error: 'access_denied',
+                error_description: 'ChatGPT MCP access is disabled by default. Use the REST/OpenAPI Action path, or set chatgptMcpEnabled to true explicitly.'
+            }, 403);
+        }
         // Registration is unauthenticated, so bound the persisted client list.
         // Clients without any live code or token are evicted first, which keeps
         // a flood of throwaway registrations from locking out real clients.
@@ -170,8 +177,8 @@ function addOAuthRoutes(app, config) {
             response_types: ['code'],
             token_endpoint_auth_method: authMethod,
             scope,
-            client_name: typeof body.client_name === 'string' && body.client_name.trim()
-                ? body.client_name.trim().slice(0, MAX_CLIENT_NAME_CHARS)
+            client_name: requestedClientName
+                ? requestedClientName.slice(0, MAX_CLIENT_NAME_CHARS)
                 : 'AI Server Commander MCP client'
         };
         store.setClient(storedClient);

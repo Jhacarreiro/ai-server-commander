@@ -3,6 +3,7 @@
   "productionDomain": "https://commander.example.com",
   "authToken": "replace-me",
   "mcpToken": "replace-me-too",
+  "chatgptMcpEnabled": false,
   "confirmationPolicy": {
     "read": false,
     "write": false,

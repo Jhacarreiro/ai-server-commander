@@ -5,6 +5,19 @@ const { confirmationPolicyText, normalizeConfirmationPolicy } = require('../serv
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const MAX_MCP_BATCH = Math.max(1, Number.parseInt(process.env.MAX_MCP_BATCH || '64', 10) || 64);
 
+function isOpenAiMcpRequest(req) {
+    const headers = req && req.headers ? req.headers : {};
+    const origin = String(headers.origin || '').toLowerCase();
+    const userAgent = String(headers['user-agent'] || '').toLowerCase();
+    return Boolean(
+        headers['openai-conversation-id'] ||
+        headers['openai-ephemeral-user-id'] ||
+        origin === 'https://chat.openai.com' ||
+        userAgent.includes('openai') ||
+        userAgent.includes('chatgpt')
+    );
+}
+
 function jsonRpcResult(id, result) {
     return { jsonrpc: '2.0', id, result };
 }
@@ -43,6 +56,7 @@ function commandToText(result) {
 
 module.exports = function createMcpHandler(config = {}) {
     const confirmationPolicy = normalizeConfirmationPolicy(config.confirmationPolicy);
+    const chatgptMcpEnabled = config.chatgptMcpEnabled === true;
     const confirmationInstructions = confirmationPolicyText(confirmationPolicy);
     const packageVersion = (() => {
         try { return require('../package.json').version || '0.0.0'; }
@@ -50,6 +64,13 @@ module.exports = function createMcpHandler(config = {}) {
     })();
 
     const securitySchemes = [{ type: 'oauth2', scopes: ['terminal'] }];
+    const toolMeta = {
+        securitySchemes,
+        ...(chatgptMcpEnabled ? {
+            'openai/toolInvocation/invoking': 'Running terminal command…',
+            'openai/toolInvocation/invoked': 'Terminal command finished'
+        } : {})
+    };
 
     const outputSchema = {
         type: 'object',
@@ -91,11 +112,7 @@ module.exports = function createMcpHandler(config = {}) {
             idempotentHint: false
         },
         securitySchemes,
-        _meta: {
-            securitySchemes,
-            'openai/toolInvocation/invoking': 'Running terminal command…',
-            'openai/toolInvocation/invoked': 'Terminal command finished'
-        },
+        _meta: toolMeta,
         outputSchema,
         inputSchema: {
             type: 'object',
@@ -214,6 +231,12 @@ module.exports = function createMcpHandler(config = {}) {
 
     return async function mcpHandler(req, res) {
         res.setHeader('Cache-Control', 'no-store');
+
+        if (!chatgptMcpEnabled && isOpenAiMcpRequest(req)) {
+            return res.status(403).json({
+                error: 'ChatGPT MCP access is disabled by default. Use the REST/OpenAPI Action path, or set chatgptMcpEnabled to true explicitly.'
+            });
+        }
 
         if (req.method === 'GET' || req.method === 'DELETE') {
             res.setHeader('Allow', 'POST');
