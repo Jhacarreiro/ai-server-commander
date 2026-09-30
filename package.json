@@ -20,7 +20,7 @@
     "oauth",
     "automation"
   ],
-  "author": "Jo\u00e3o Carreiro",
+  "author": "João Carreiro",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/firestore": "8.7.1",
@@ -31,7 +31,7 @@
     "marked": "^14.1.4",
     "simple-git": "^3.36.0",
     "swagger-jsdoc": "^6.3.0",
-    "@jackwener/opencli": "1.8.7"
+    "ws": "8.22.0"
   },
   "homepage": "https://github.com/Jhacarreiro/ai-server-commander#readme",
   "repository": {
