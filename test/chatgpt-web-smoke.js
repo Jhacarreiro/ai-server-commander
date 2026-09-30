@@ -17,6 +17,12 @@ const snap = (overrides = {}) => ({
         { type: 'page', url: 'https://chatgpt.com/c/conv-1', webSocketDebuggerUrl: 'ws://wanted' }
     ], { conversationUrl: 'https://chatgpt.com/c/conv-1' });
     assert.strictEqual(selected.webSocketDebuggerUrl, 'ws://wanted');
+    const preferredConversation = selectCdpTarget([
+        { type: 'page', url: 'https://chatgpt.com/c/conv-2', webSocketDebuggerUrl: 'ws://conversation' },
+        { type: 'page', url: 'https://chatgpt.com/', webSocketDebuggerUrl: 'ws://home' }
+    ], { conversationUrl: null });
+    assert.strictEqual(preferredConversation.webSocketDebuggerUrl, 'ws://conversation');
+
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commander-cgpt-'));
     const statePath = path.join(dir, 'state.json');
