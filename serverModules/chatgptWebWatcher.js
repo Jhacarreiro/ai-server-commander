@@ -40,6 +40,17 @@ function cdpEndpoint(value) {
     return raw;
 }
 
+function approvalDomain(config = {}, env = process.env) {
+    const raw = String(env.CHATGPT_WEB_APPROVAL_DOMAIN ?? config.productionDomain ?? '').trim();
+    if (!raw) return null;
+    try {
+        const parsed = new URL(raw.includes('://') ? raw : `https://${raw}`);
+        return parsed.hostname.toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
 function conversationUrl(value) {
     if (value == null || String(value).trim() === '') return null;
     let parsed;
@@ -62,7 +73,8 @@ function resolveChatGPTWebConfig(config = {}, env = process.env) {
         primeMs: int(env.CHATGPT_WEB_PRIME_MS ?? local.primeMs, 20000),
         pollMs: int(env.CHATGPT_WEB_POLL_MS ?? local.pollMs, 5000),
         statePath: path.isAbsolute(String(stateRaw)) ? String(stateRaw) : path.resolve(PROJECT_ROOT, String(stateRaw)),
-        emitInitial: bool(env.CHATGPT_WEB_EMIT_INITIAL ?? local.emitInitial, false)
+        emitInitial: bool(env.CHATGPT_WEB_EMIT_INITIAL ?? local.emitInitial, false),
+        approvalDomain: approvalDomain(config, env)
     };
 }
 
@@ -141,7 +153,7 @@ function publicStatus(settings, state) {
         updatedAt: state.updatedAt,
         currentConversationId: state.currentConversationId,
         configuredConversationId: conversationIdFromUrl(settings.conversationUrl),
-        mode: settings.conversationUrl ? 'conversation' : 'account',
+        mode: settings.conversationUrl ? 'conversation' : 'attention',
         pollMs: settings.pollMs,
         stableMs: settings.stableMs,
         primeMs: settings.primeMs,
@@ -320,49 +332,98 @@ async function readAccountActivity(settings, knownVersions = {}) {
     const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
     try {
         const knownJson = JSON.stringify(knownVersions && typeof knownVersions === 'object' ? knownVersions : {});
+        const approvalDomainJson = JSON.stringify(settings.approvalDomain || null);
         const expression = `(() => (async () => {
             const known = ${knownJson};
+            const approvalDomain = ${approvalDomainJson};
+            const anchor = document.querySelector('a[href*="/c/"]');
+            const row = anchor && (anchor.closest('[role="group"].sidebar-item') || anchor.parentElement);
+            const fiberKey = row && Object.keys(row).find(key => key.startsWith('__reactFiber$'));
+            let fiber = fiberKey ? row[fiberKey] : null;
+            let source = null;
+            for (let depth = 0; fiber && depth < 60; depth += 1, fiber = fiber.return) {
+                if (fiber.memoizedProps && fiber.memoizedProps.chatGptSource) {
+                    source = fiber.memoizedProps.chatGptSource;
+                    break;
+                }
+            }
+            if (!source || !Array.isArray(source.chatTargets)) {
+                return { authenticated: true, authStatus: 200, conversations: [], changed: null, sourceAvailable: false };
+            }
+            const conversations = source.chatTargets.map(item => ({
+                id: String(item.conversationId || item.conversation?.id || ''),
+                title: String(item.conversation?.title || ''),
+                attentionState: String(item.attentionState || 'idle'),
+                recencyAt: Number(item.recencyAt || 0),
+                route: String(item.route || ''),
+                version: String(item.attentionState || 'idle') + '|' + String(item.recencyAt || 0)
+            })).filter(item => item.id);
+            const active = conversations
+                .filter(item => (item.attentionState === 'waiting' || item.attentionState === 'unread') && known[item.id] !== item.version)
+                .sort((a, b) => {
+                    const ap = a.attentionState === 'waiting' ? 0 : 1;
+                    const bp = b.attentionState === 'waiting' ? 0 : 1;
+                    return ap - bp || b.recencyAt - a.recencyAt;
+                });
+            const changedItem = active[0] || null;
+            if (!changedItem) return { authenticated: true, authStatus: 200, conversations, changed: null, sourceAvailable: true };
+
             const sessionResponse = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
             const session = await sessionResponse.json().catch(() => null);
             const token = session && session.accessToken;
             if (!sessionResponse.ok || !token) {
-                return { authenticated: false, authStatus: sessionResponse.status || 0, conversations: [], changed: null };
+                return { authenticated: false, authStatus: sessionResponse.status || 0, conversations, changed: changedItem, sourceAvailable: true };
             }
             const headers = { Authorization: 'Bearer ' + token };
-            const listResponse = await fetch('/backend-api/conversations?offset=0&limit=20&order=updated&is_archived=false', { headers, cache: 'no-store' });
-            if (!listResponse.ok) {
-                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations: [], changed: null };
-            }
-            const list = await listResponse.json();
-            const items = Array.isArray(list && list.items) ? list.items : [];
-            const conversations = items.map(item => ({
-                id: String(item.id || item.conversation_id || ''),
-                updateTime: String(item.update_time || item.updated_at || ''),
-                asyncStatus: item.async_status == null ? null : item.async_status,
-                version: String(item.update_time || item.updated_at || '') + '|' + String(item.async_status == null ? '' : item.async_status)
-            })).filter(item => item.id);
-            const changedItems = conversations.filter(item => known[item.id] !== item.version).slice().reverse();
-            const changedItem = changedItems[0] || null;
-            if (!changedItem) {
-                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations, changed: null };
-            }
-
             const detailResponse = await fetch('/backend-api/conversation/' + encodeURIComponent(changedItem.id), { headers, cache: 'no-store' });
             if (!detailResponse.ok) {
-                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations, changed: { ...changedItem, detailStatus: detailResponse.status, completion: null } };
+                return { authenticated: true, authStatus: sessionResponse.status, conversations, changed: { ...changedItem, detailStatus: detailResponse.status, completion: null, consent: null }, sourceAvailable: true };
             }
             const detail = await detailResponse.json();
             const mapping = detail && detail.mapping && typeof detail.mapping === 'object' ? detail.mapping : {};
             let nodeId = detail && detail.current_node;
             let completion = null;
-            let sawInProgress = false;
+            let consent = null;
             let steps = 0;
             while (nodeId && mapping[nodeId] && steps < 512) {
                 const node = mapping[nodeId];
                 const message = node && node.message;
-                if (message && message.status === 'in_progress') sawInProgress = true;
-                if (message && message.author && message.author.role === 'user') break;
-                if (message && message.author && message.author.role === 'assistant'
+                const fromServer = message?.metadata?.jit_plugin_data?.from_server;
+                if (!consent && changedItem.attentionState === 'waiting'
+                    && fromServer?.type === 'confirm_action'
+                    && approvalDomain
+                    && String(fromServer?.body?.domain || '').toLowerCase() === approvalDomain
+                    && fromServer?.body?.operation === 'runTerminalScript') {
+                    const allowAction = (Array.isArray(fromServer?.body?.actions) ? fromServer.body.actions : [])
+                        .find(action => action?.type === 'allow' && action?.allow?.target_message_id);
+                    if (allowAction) {
+                        const targetMessageId = String(allowAction.allow.target_message_id);
+                        const resolved = (Array.isArray(node.children) ? node.children : []).some(childId => {
+                            const child = mapping[childId]?.message;
+                            const fromClient = child?.metadata?.jit_plugin_data?.from_client;
+                            const resolvedTarget = fromClient?.target_message_id || fromClient?.user_action?.target_message_id;
+                            const resolvedType = fromClient?.type || fromClient?.user_action?.data?.type;
+                            return String(resolvedTarget || '') === targetMessageId
+                                && ['allow', 'deny', 'always_allow'].includes(String(resolvedType || ''));
+                        });
+                        if (!resolved) {
+                            consent = {
+                                conversationId: String(detail?.conversation_id || detail?.id || changedItem.id),
+                                confirmMessageId: String(message?.id || nodeId),
+                                targetMessageId,
+                                authorRole: String(message?.author?.role || 'tool'),
+                                authorName: String(message?.author?.name || ''),
+                                modelSlug: String(message?.metadata?.model_slug || detail?.default_model_slug || ''),
+                                gizmoId: String(detail?.gizmo_id || ''),
+                                domain: String(fromServer?.body?.domain || ''),
+                                operation: String(fromServer?.body?.operation || ''),
+                                requestId: String(message?.metadata?.request_id || '')
+                            };
+                        }
+                    }
+                }
+                if (!completion && changedItem.attentionState === 'unread'
+                    && message && message.author && message.author.role === 'assistant'
                     && message.recipient === 'all'
                     && message.content && message.content.content_type === 'text'
                     && message.status === 'finished_successfully'
@@ -377,17 +438,17 @@ async function readAccountActivity(settings, knownVersions = {}) {
                             completedAt: message.update_time || message.create_time || null
                         };
                     }
-                    break;
                 }
+                if (message && message.author && message.author.role === 'user') break;
                 nodeId = node && node.parent;
                 steps += 1;
             }
             return {
                 authenticated: true,
                 authStatus: sessionResponse.status,
-                listStatus: listResponse.status,
                 conversations,
-                changed: { ...changedItem, detailStatus: detailResponse.status, sawInProgress, completion }
+                changed: { ...changedItem, detailStatus: detailResponse.status, completion, consent },
+                sourceAvailable: true
             };
         })())()`;
         const evaluated = await page.command('Runtime.evaluate', {
@@ -396,10 +457,78 @@ async function readAccountActivity(settings, knownVersions = {}) {
             returnByValue: true,
             userGesture: false
         });
-        if (evaluated?.exceptionDetails) throw new Error('ChatGPT account evaluation failed.');
+        if (evaluated?.exceptionDetails) throw new Error('ChatGPT attention evaluation failed.');
         const value = evaluated?.result?.value;
-        if (!value || typeof value !== 'object') throw new Error('ChatGPT account evaluation returned no value.');
+        if (!value || typeof value !== 'object') throw new Error('ChatGPT attention evaluation returned no value.');
         return value;
+    } finally {
+        await page.close();
+    }
+}
+
+async function approveJitConsent(settings, consent) {
+    if (!consent || !settings.approvalDomain) return { ok: false, reason: 'approval_not_configured' };
+    if (String(consent.domain || '').toLowerCase() !== settings.approvalDomain) return { ok: false, reason: 'approval_domain_mismatch' };
+    if (consent.operation !== 'runTerminalScript') return { ok: false, reason: 'approval_operation_mismatch' };
+    const targets = await fetchCdpTargets(settings);
+    const target = selectCdpTarget(targets, settings);
+    if (!target) return { ok: false, reason: 'chatgpt_page_unavailable' };
+    const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
+    try {
+        const consentJson = JSON.stringify(consent);
+        const expression = `(() => (async () => {
+            const consent = ${consentJson};
+            const sessionResponse = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
+            const session = await sessionResponse.json().catch(() => null);
+            const token = session && session.accessToken;
+            if (!sessionResponse.ok || !token) return { ok: false, status: sessionResponse.status || 0, reason: 'authentication_required' };
+            const payload = {
+                action: 'next',
+                messages: [{
+                    id: crypto.randomUUID(),
+                    author: { role: consent.authorRole || 'tool', name: consent.authorName || null },
+                    content: { content_type: 'text', parts: [''] },
+                    recipient: 'all',
+                    metadata: {
+                        jit_plugin_data: {
+                            from_client: {
+                                user_action: {
+                                    data: { type: 'allow' },
+                                    target_message_id: consent.targetMessageId
+                                }
+                            }
+                        }
+                    }
+                }],
+                conversation_id: consent.conversationId,
+                parent_message_id: consent.confirmMessageId,
+                model: consent.modelSlug || undefined,
+                timezone_offset_min: new Date().getTimezoneOffset(),
+                history_and_training_disabled: false,
+                arkose_token: null,
+                conversation_mode: consent.gizmoId ? {
+                    kind: 'gizmo_interaction',
+                    gizmo_id: consent.gizmoId
+                } : undefined,
+                force_paragen: false,
+                force_rate_limit: false
+            };
+            const response = await fetch('/backend-api/conversation', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            return { ok: response.ok, status: response.status, reason: response.ok ? 'allowed' : 'approval_http_' + response.status };
+        })())()`;
+        const evaluated = await page.command('Runtime.evaluate', {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+            userGesture: false
+        });
+        if (evaluated?.exceptionDetails) return { ok: false, reason: 'approval_evaluation_failed' };
+        const value = evaluated?.result?.value;
+        return value && typeof value === 'object' ? value : { ok: false, reason: 'approval_no_result' };
     } finally {
         await page.close();
     }
@@ -407,10 +536,11 @@ async function readAccountActivity(settings, knownVersions = {}) {
 
 
 class ChatGPTWebWatcher {
-    constructor({ settings, snapshotReader, accountReader, now } = {}) {
+    constructor({ settings, snapshotReader, accountReader, consentApprover, now } = {}) {
         this.settings = settings || resolveChatGPTWebConfig();
         this.snapshotReader = snapshotReader || (() => readSnapshot(this.settings));
         this.accountReader = accountReader || ((knownVersions) => readAccountActivity(this.settings, knownVersions));
+        this.consentApprover = consentApprover || ((consent) => approveJitConsent(this.settings, consent));
         this.useAccountMode = !this.settings.conversationUrl && !snapshotReader;
         this.now = now || (() => Date.now());
     }
@@ -450,99 +580,87 @@ class ChatGPTWebWatcher {
 
     async pollAccount() {
         let state = this.getState();
-        const nowMs = this.now();
-        const nowIso = new Date(nowMs).toISOString();
+        const nowIso = new Date(this.now()).toISOString();
         if (!this.settings.enabled) return { ...publicStatus(this.settings, state), newResponse: false };
         if (state.pendingFingerprint) return { ...publicStatus(this.settings, state), newResponse: false };
 
         let activity;
         try { activity = await this.accountReader(state.accountConversationVersions || {}); }
         catch (error) {
-            state = { ...state, status: 'error', reason: 'account_snapshot_failed', updatedAt: nowIso, lastError: String(error?.message || error).slice(0, 500) };
+            state = { ...state, status: 'error', reason: 'attention_snapshot_failed', updatedAt: nowIso, lastError: String(error?.message || error).slice(0, 500) };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
-
         if (!activity.authenticated) {
             state = { ...state, status: 'needs_human', reason: 'authentication_required', updatedAt: nowIso, lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
-        if (activity.listStatus && activity.listStatus !== 200) {
-            state = { ...state, status: 'error', reason: 'conversation_list_failed', updatedAt: nowIso, lastError: `conversation list HTTP ${activity.listStatus}` };
+        if (activity.sourceAvailable === false) {
+            state = { ...state, status: 'error', reason: 'sidebar_attention_unavailable', updatedAt: nowIso, lastError: 'chatGptSource.chatTargets unavailable' };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
         const conversations = Array.isArray(activity.conversations) ? activity.conversations : [];
+        const versions = Object.fromEntries(conversations.map(item => [item.id, String(item.version || '')]).filter(([id]) => id));
         if (!state.accountPrimedAt) {
-            const baseline = {};
-            for (const item of conversations) if (item?.id) baseline[item.id] = String(item.version || '');
-            state = {
-                ...state,
-                version: 3,
-                status: 'idle',
-                reason: 'account_baseline_recorded',
-                updatedAt: nowIso,
-                accountPrimedAt: nowIso,
-                accountConversationVersions: baseline,
-                lastError: null
-            };
-            this.save(state);
-            return { ...publicStatus(this.settings, state), newResponse: false, baseline: true };
+            const hasWaiting = conversations.some(item => item.attentionState === 'waiting' && state.accountConversationVersions?.[item.id] !== item.version);
+            state = { ...state, version: 3, accountPrimedAt: nowIso, accountConversationVersions: versions, updatedAt: nowIso, lastError: null };
+            if (!hasWaiting) {
+                state.status = 'idle';
+                state.reason = 'attention_baseline_recorded';
+                this.save(state);
+                return { ...publicStatus(this.settings, state), newResponse: false, baseline: true };
+            }
+            // Keep waiting items eligible for immediate approval on first run.
+            for (const item of conversations) if (item.attentionState === 'waiting') delete state.accountConversationVersions[item.id];
         }
 
         if (!activity.changed) {
-            const currentIds = new Set(conversations.map(item => item?.id).filter(Boolean));
-            const pruned = {};
-            for (const [id, version] of Object.entries(state.accountConversationVersions || {})) if (currentIds.has(id)) pruned[id] = version;
-            state = { ...state, status: 'idle', reason: 'account_no_changes', updatedAt: nowIso, accountConversationVersions: pruned, lastError: null };
+            state = { ...state, status: 'idle', reason: 'attention_idle', updatedAt: nowIso, accountConversationVersions: versions, lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
         const changed = activity.changed;
-        const versions = { ...(state.accountConversationVersions || {}) };
-        if (changed.id) versions[changed.id] = String(changed.version || '');
-        const currentIds = new Set(conversations.map(item => item?.id).filter(Boolean));
-        for (const id of Object.keys(versions)) if (!currentIds.has(id)) delete versions[id];
-
         if (changed.detailStatus && changed.detailStatus !== 200) {
-            if (changed.id) delete versions[changed.id];
-            state = { ...state, status: 'error', reason: 'conversation_detail_failed', updatedAt: nowIso, accountConversationVersions: versions, lastError: `conversation detail HTTP ${changed.detailStatus}` };
+            const retryVersions = { ...versions };
+            delete retryVersions[changed.id];
+            state = { ...state, status: 'error', reason: 'conversation_detail_failed', updatedAt: nowIso, accountConversationVersions: retryVersions, lastError: `conversation detail HTTP ${changed.detailStatus}` };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
+        if (changed.attentionState === 'waiting') {
+            if (!changed.consent) {
+                state = { ...state, status: 'needs_human', reason: 'attention_waiting_unmatched', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
+                this.save(state);
+                return { ...publicStatus(this.settings, state), newResponse: false };
+            }
+            const approval = await this.consentApprover(changed.consent).catch(error => ({ ok: false, reason: String(error?.message || error) }));
+            if (!approval?.ok) {
+                const retryVersions = { ...versions };
+                delete retryVersions[changed.id];
+                state = { ...state, status: 'error', reason: 'jit_consent_allow_failed', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: retryVersions, lastError: String(approval?.reason || 'approval_failed') };
+                this.save(state);
+                return { ...publicStatus(this.settings, state), newResponse: false, approval };
+            }
+            state = { ...state, status: 'generating', reason: 'jit_consent_allowed', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false, approval };
+        }
+
         const completion = changed.completion;
         if (!completion || !completion.text) {
-            state = {
-                ...state,
-                status: changed.sawInProgress ? 'generating' : 'stabilizing',
-                reason: changed.sawInProgress ? 'account_response_in_progress' : 'account_conversation_updated',
-                updatedAt: nowIso,
-                currentConversationId: changed.id || state.currentConversationId,
-                accountConversationVersions: versions,
-                lastError: null
-            };
+            state = { ...state, status: 'stabilizing', reason: 'unread_without_terminal_response', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
         const fp = fingerprint(changed.id, `${completion.messageId || ''}\0${completion.text}`);
         if (normalizeRecentFingerprints(state.recentFingerprints).includes(fp)) {
-            state = {
-                ...state,
-                status: 'completed',
-                reason: 'response_seen_before',
-                updatedAt: nowIso,
-                currentConversationId: changed.id,
-                accountConversationVersions: versions,
-                lastCompletedFingerprint: fp,
-                lastCompletedAt: nowIso,
-                recentFingerprints: rememberFingerprint(state, fp),
-                lastError: null
-            };
+            state = { ...state, status: 'completed', reason: 'response_seen_before', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastCompletedFingerprint: fp, lastCompletedAt: nowIso, recentFingerprints: rememberFingerprint(state, fp), lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
@@ -560,7 +678,7 @@ class ChatGPTWebWatcher {
             recentFingerprints: rememberFingerprint(state, fp),
             latest: {
                 conversationId: changed.id,
-                url: `https://chatgpt.com/c/${changed.id}`,
+                url: changed.route ? `https://chatgpt.com${changed.route}` : `https://chatgpt.com/c/${changed.id}`,
                 fingerprint: fp,
                 text: String(completion.text),
                 chars: Number(completion.chars || String(completion.text).length),
@@ -706,4 +824,4 @@ class ChatGPTWebWatcher {
 
 }
 
-module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
+module.exports = { ChatGPTWebWatcher, approveJitConsent, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };

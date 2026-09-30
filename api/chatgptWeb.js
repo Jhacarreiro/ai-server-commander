@@ -16,13 +16,8 @@ function watcherFor(config) {
     return singleton;
 }
 
-function nextPollDelay(watcher, result) {
-    const accountMode = !watcher.settings.conversationUrl;
-    const base = accountMode ? Math.max(watcher.settings.pollMs, 60000) : watcher.settings.pollMs;
-    if (result && result.reason === 'conversation_list_failed' && /429/.test(String(result.lastError || ''))) {
-        return Math.max(base, 300000);
-    }
-    return base;
+function nextPollDelay(watcher, _result) {
+    return watcher.settings.pollMs;
 }
 
 function ensureBackgroundPolling(watcher) {

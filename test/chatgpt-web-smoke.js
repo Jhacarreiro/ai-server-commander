@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ChatGPTWebWatcher, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
+const { ChatGPTWebWatcher, approveJitConsent, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
 const { nextPollDelay } = require('../api/chatgptWeb');
 
 const snap = (overrides = {}) => ({
@@ -13,9 +13,11 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(conversationIdFromUrl('https://chatgpt.com/c/abc'), 'abc');
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).enabled, false);
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).primeMs, 20000);
-    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, null), 60000);
+    assert.strictEqual(resolveChatGPTWebConfig({ productionDomain: 'https://terminal.example.com' }, {}).approvalDomain, 'terminal.example.com');
+    assert.strictEqual((await approveJitConsent({ approvalDomain: 'terminal.example.com' }, { domain: 'other.example.com', operation: 'runTerminalScript' })).reason, 'approval_domain_mismatch');
+    assert.strictEqual((await approveJitConsent({ approvalDomain: 'terminal.example.com' }, { domain: 'terminal.example.com', operation: 'otherOperation' })).reason, 'approval_operation_mismatch');
+    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, null), 5000);
     assert.strictEqual(nextPollDelay({ settings: { conversationUrl: 'https://chatgpt.com/c/x', pollMs: 5000 } }, null), 5000);
-    assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, { reason: 'conversation_list_failed', lastError: 'conversation list HTTP 429' }), 300000);
     const selected = selectCdpTarget([
         { type: 'page', url: 'https://chatgpt.com/c/other', webSocketDebuggerUrl: 'ws://other' },
         { type: 'page', url: 'https://chatgpt.com/c/conv-1', webSocketDebuggerUrl: 'ws://wanted' }
@@ -191,54 +193,69 @@ const snap = (overrides = {}) => ({
     assert.ok(persisted.recentFingerprints.length >= 3);
     assert.ok(persisted.recentFingerprints.length <= 64);
 
-    // Account mode: baseline existing recent conversations without notifying,
-    // observe an in-progress update, then emit exactly once when the same
-    // conversation acquires a terminal assistant reply.
-    const accountStatePath = path.join(dir, 'account-state.json');
+    // Attention mode: idle baseline does no detail work; waiting triggers a narrowly
+    // allowlisted JIT approval; unread triggers completion delivery exactly once.
+    const accountStatePath = path.join(dir, 'attention-state.json');
     let accountNow = Date.parse('2026-09-30T13:00:00Z');
-    let accountStep = 0;
-    const accountReader = async (knownVersions) => {
-        accountStep += 1;
-        if (accountStep === 1) {
+    let attentionStep = 0;
+    let approvalCalls = 0;
+    const consent = {
+        conversationId: 'acct-1',
+        confirmMessageId: 'confirm-1',
+        targetMessageId: 'target-1',
+        authorRole: 'tool',
+        authorName: 'terminal-tool',
+        modelSlug: 'model-x',
+        gizmoId: 'gizmo-x',
+        domain: 'terminal.example.com',
+        operation: 'runTerminalScript',
+        requestId: 'req-1'
+    };
+    const attentionReader = async (knownVersions) => {
+        attentionStep += 1;
+        if (attentionStep === 1) {
             return {
                 authenticated: true,
                 authStatus: 200,
-                listStatus: 200,
+                sourceAvailable: true,
                 conversations: [
-                    { id: 'acct-1', version: 'v1|', updateTime: 'v1', asyncStatus: null },
-                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                    { id: 'acct-1', title: 'One', attentionState: 'idle', recencyAt: 1, route: '/c/acct-1', version: 'idle|1' },
+                    { id: 'acct-2', title: 'Two', attentionState: 'idle', recencyAt: 1, route: '/c/acct-2', version: 'idle|1' }
                 ],
-                changed: { id: 'acct-2', version: 'v1|', detailStatus: 200, sawInProgress: false, completion: { messageId: 'old', text: 'Old answer', chars: 10 } }
+                changed: null
             };
         }
-        if (accountStep === 2) {
-            assert.strictEqual(knownVersions['acct-1'], 'v1|');
+        if (attentionStep === 2) {
+            assert.strictEqual(knownVersions['acct-1'], 'idle|1');
             return {
                 authenticated: true,
                 authStatus: 200,
-                listStatus: 200,
+                sourceAvailable: true,
                 conversations: [
-                    { id: 'acct-1', version: 'v2|3', updateTime: 'v2', asyncStatus: 3 },
-                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                    { id: 'acct-1', title: 'One', attentionState: 'waiting', recencyAt: 2, route: '/c/acct-1', version: 'waiting|2' },
+                    { id: 'acct-2', title: 'Two', attentionState: 'idle', recencyAt: 1, route: '/c/acct-2', version: 'idle|1' }
                 ],
-                changed: { id: 'acct-1', version: 'v2|3', detailStatus: 200, sawInProgress: true, completion: null }
+                changed: { id: 'acct-1', attentionState: 'waiting', recencyAt: 2, route: '/c/acct-1', version: 'waiting|2', detailStatus: 200, consent, completion: null }
             };
         }
-        if (accountStep === 3) {
-            assert.strictEqual(knownVersions['acct-1'], 'v2|3');
+        if (attentionStep === 3) {
+            assert.strictEqual(knownVersions['acct-1'], 'waiting|2');
             return {
                 authenticated: true,
                 authStatus: 200,
-                listStatus: 200,
+                sourceAvailable: true,
                 conversations: [
-                    { id: 'acct-1', version: 'v3|', updateTime: 'v3', asyncStatus: null },
-                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                    { id: 'acct-1', title: 'One', attentionState: 'unread', recencyAt: 3, route: '/c/acct-1', version: 'unread|3' },
+                    { id: 'acct-2', title: 'Two', attentionState: 'idle', recencyAt: 1, route: '/c/acct-2', version: 'idle|1' }
                 ],
                 changed: {
                     id: 'acct-1',
-                    version: 'v3|',
+                    attentionState: 'unread',
+                    recencyAt: 3,
+                    route: '/c/acct-1',
+                    version: 'unread|3',
                     detailStatus: 200,
-                    sawInProgress: false,
+                    consent: null,
                     completion: { messageId: 'msg-final', text: 'Finished answer', chars: 15, completedAt: 1790773200 }
                 }
             };
@@ -246,27 +263,33 @@ const snap = (overrides = {}) => ({
         return {
             authenticated: true,
             authStatus: 200,
-            listStatus: 200,
+            sourceAvailable: true,
             conversations: [
-                { id: 'acct-1', version: 'v3|', updateTime: 'v3', asyncStatus: null },
-                { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                { id: 'acct-1', title: 'One', attentionState: 'unread', recencyAt: 3, route: '/c/acct-1', version: 'unread|3' },
+                { id: 'acct-2', title: 'Two', attentionState: 'idle', recencyAt: 1, route: '/c/acct-2', version: 'idle|1' }
             ],
             changed: null
         };
     };
     const accountWatcher = new ChatGPTWebWatcher({
-        settings: { ...settings, statePath: accountStatePath, conversationUrl: null },
-        accountReader,
+        settings: { ...settings, statePath: accountStatePath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: attentionReader,
+        consentApprover: async value => {
+            approvalCalls += 1;
+            assert.deepStrictEqual(value, consent);
+            return { ok: true, status: 200, reason: 'allowed' };
+        },
         now: () => accountNow
     });
     let accountResult = await accountWatcher.poll();
-    assert.strictEqual(accountResult.reason, 'account_baseline_recorded');
+    assert.strictEqual(accountResult.reason, 'attention_baseline_recorded');
     assert.strictEqual(accountResult.newResponse, false);
-    assert.strictEqual(accountWatcher.getPending().pending, null);
+    assert.strictEqual(approvalCalls, 0);
     accountNow += 5000;
     accountResult = await accountWatcher.poll();
-    assert.strictEqual(accountResult.reason, 'account_response_in_progress');
+    assert.strictEqual(accountResult.reason, 'jit_consent_allowed');
     assert.strictEqual(accountResult.status, 'generating');
+    assert.strictEqual(approvalCalls, 1);
     accountNow += 5000;
     accountResult = await accountWatcher.poll();
     assert.strictEqual(accountResult.reason, 'new_response');
@@ -277,8 +300,36 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(accountWatcher.ack(accountPending.fingerprint).acked, true);
     accountNow += 5000;
     accountResult = await accountWatcher.poll();
-    assert.strictEqual(accountResult.reason, 'account_no_changes');
+    assert.strictEqual(accountResult.reason, 'attention_idle');
     assert.strictEqual(accountWatcher.getPending().pending, null);
+
+    const unmatchedPath = path.join(dir, 'attention-unmatched.json');
+    let unmatchedStep = 0;
+    const unmatchedWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: unmatchedPath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: async () => {
+            unmatchedStep += 1;
+            if (unmatchedStep === 1) {
+                return {
+                    authenticated: true, authStatus: 200, sourceAvailable: true,
+                    conversations: [{ id: 'acct-x', attentionState: 'idle', recencyAt: 1, route: '/c/acct-x', version: 'idle|1' }], changed: null
+                };
+            }
+            return {
+                authenticated: true, authStatus: 200, sourceAvailable: true,
+                conversations: [{ id: 'acct-x', attentionState: 'waiting', recencyAt: 2, route: '/c/acct-x', version: 'waiting|2' }],
+                changed: { id: 'acct-x', attentionState: 'waiting', recencyAt: 2, route: '/c/acct-x', version: 'waiting|2', detailStatus: 200, consent: null, completion: null }
+            };
+        },
+        consentApprover: async () => { throw new Error('must not approve unmatched waiting state'); },
+        now: () => accountNow
+    });
+    assert.strictEqual((await unmatchedWatcher.poll()).reason, 'attention_baseline_recorded');
+    const unmatchedResult = await unmatchedWatcher.poll();
+    assert.strictEqual(unmatchedResult.status, 'needs_human');
+    assert.strictEqual(unmatchedResult.reason, 'attention_waiting_unmatched');
+
+    assert.strictEqual(nextPollDelay({ settings: { pollMs: 5000 } }, null), 5000);
 
     console.log('PASS chatgpt-web exact-once tab + account watcher behavior');
 })().catch(error => { console.error(error); process.exit(1); });
