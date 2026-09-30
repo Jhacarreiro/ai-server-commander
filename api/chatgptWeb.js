@@ -16,30 +16,45 @@ function watcherFor(config) {
     return singleton;
 }
 
+function nextPollDelay(watcher, result) {
+    const accountMode = !watcher.settings.conversationUrl;
+    const base = accountMode ? Math.max(watcher.settings.pollMs, 15000) : watcher.settings.pollMs;
+    if (result && result.reason === 'conversation_list_failed' && /429/.test(String(result.lastError || ''))) {
+        return Math.max(base, 60000);
+    }
+    return base;
+}
+
 function ensureBackgroundPolling(watcher) {
     if (!watcher.settings.enabled || pollTimer) return;
-    const cycle = async () => {
-        if (pollInFlight) return;
-        pollInFlight = true;
-        try {
-            const result = await watcher.poll();
-            if (result.newResponse) {
-                console.log('ChatGPT Web response pending', {
-                    conversationId: result.currentConversationId,
-                    fingerprint: result.latest && result.latest.fingerprint,
-                    chars: result.latest && result.latest.chars
-                });
+    const schedule = (delayMs) => {
+        pollTimer = setTimeout(async () => {
+            pollTimer = null;
+            if (pollInFlight) {
+                schedule(nextPollDelay(watcher, null));
+                return;
             }
-        } catch (error) {
-            console.error('ChatGPT Web background poll failed:', error && error.message ? error.message : error);
-        } finally {
-            pollInFlight = false;
-        }
+            pollInFlight = true;
+            let result = null;
+            try {
+                result = await watcher.poll();
+                if (result.newResponse) {
+                    console.log('ChatGPT Web response pending', {
+                        conversationId: result.currentConversationId,
+                        fingerprint: result.latest && result.latest.fingerprint,
+                        chars: result.latest && result.latest.chars
+                    });
+                }
+            } catch (error) {
+                console.error('ChatGPT Web background poll failed:', error && error.message ? error.message : error);
+            } finally {
+                pollInFlight = false;
+                schedule(nextPollDelay(watcher, result));
+            }
+        }, delayMs);
+        if (typeof pollTimer.unref === 'function') pollTimer.unref();
     };
-    const initial = setTimeout(cycle, 100);
-    if (typeof initial.unref === 'function') initial.unref();
-    pollTimer = setInterval(cycle, watcher.settings.pollMs);
-    if (typeof pollTimer.unref === 'function') pollTimer.unref();
+    schedule(100);
 }
 
 function disabled(res, watcher) {
@@ -113,4 +128,4 @@ function createChatGPTWebHandlers(config) {
     };
 }
 
-module.exports = { createChatGPTWebHandlers };
+module.exports = { createChatGPTWebHandlers, nextPollDelay };
