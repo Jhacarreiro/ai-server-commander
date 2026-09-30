@@ -150,54 +150,130 @@ function publicStatus(settings, state) {
     };
 }
 
-async function readAuthenticatedSession(page) {
-    const tree = await page.cdp('Page.getFrameTree');
-    const frameId = tree?.frameTree?.frame?.id;
-    if (!frameId) throw new Error('ChatGPT main frame unavailable for auth probe.');
-
-    const loaded = await page.cdp('Network.loadNetworkResource', {
-        frameId,
-        url: 'https://chatgpt.com/api/auth/session',
-        options: { disableCache: true, includeCredentials: true }
-    });
-    const resource = loaded?.resource || {};
-    let text = '';
-    const maxBytes = 256 * 1024;
-    if (resource.stream) {
+function selectCdpTarget(targets, settings) {
+    const pages = (Array.isArray(targets) ? targets : []).filter((target) => {
+        if (target?.type !== 'page' || !target?.webSocketDebuggerUrl) return false;
         try {
-            while (text.length <= maxBytes) {
-                const chunk = await page.cdp('IO.read', { handle: resource.stream });
-                const data = chunk?.base64Encoded
-                    ? Buffer.from(String(chunk.data || ''), 'base64').toString('utf8')
-                    : String(chunk?.data || '');
-                text += data;
-                if (chunk?.eof) break;
-            }
-        } finally {
-            await page.cdp('IO.close', { handle: resource.stream }).catch(() => {});
-        }
+            const parsed = new URL(String(target.url || ''));
+            return ['chatgpt.com', 'www.chatgpt.com'].includes(parsed.hostname.toLowerCase());
+        } catch { return false; }
+    });
+    const configuredId = conversationIdFromUrl(settings.conversationUrl);
+    if (configuredId) {
+        const exact = pages.find((target) => conversationIdFromUrl(target.url) === configuredId);
+        if (exact) return exact;
     }
-    if (text.length > maxBytes) throw new Error('ChatGPT auth response exceeded safe size limit.');
+    return pages[pages.length - 1] || null;
+}
 
-    let body = null;
-    try { body = JSON.parse(text); } catch {}
+async function fetchCdpTargets(settings) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(`${settings.cdpEndpoint}/json/list`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`CDP target list failed with HTTP ${response.status}.`);
+        const body = await response.json();
+        if (!Array.isArray(body)) throw new Error('CDP target list returned an invalid payload.');
+        return body;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function connectCdpSession(webSocketDebuggerUrl, timeoutMs = 10000) {
+    const WebSocket = require('ws');
+    const socket = new WebSocket(webSocketDebuggerUrl);
+    let nextId = 1;
+    let closed = false;
+    const pending = new Map();
+
+    const rejectPending = (error) => {
+        for (const { reject, timer } of pending.values()) {
+            clearTimeout(timer);
+            reject(error);
+        }
+        pending.clear();
+    };
+
+    socket.on('message', (raw) => {
+        let message;
+        try { message = JSON.parse(String(raw)); } catch { return; }
+        if (!message?.id || !pending.has(message.id)) return;
+        const item = pending.get(message.id);
+        pending.delete(message.id);
+        clearTimeout(item.timer);
+        if (message.error) item.reject(new Error(`CDP ${item.method} failed: ${message.error.message || 'unknown error'}`));
+        else item.resolve(message.result || {});
+    });
+    socket.on('close', () => {
+        closed = true;
+        rejectPending(new Error('CDP WebSocket closed.'));
+    });
+    socket.on('error', (error) => {
+        rejectPending(error instanceof Error ? error : new Error('CDP WebSocket error.'));
+    });
+
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            socket.terminate();
+            reject(new Error('CDP WebSocket connection timed out.'));
+        }, timeoutMs);
+        socket.once('open', () => { clearTimeout(timer); resolve(); });
+        socket.once('error', (error) => { clearTimeout(timer); reject(error); });
+    });
+
     return {
-        authenticated: Boolean(
-            resource.success === true &&
-            resource.httpStatusCode === 200 &&
-            body && typeof body === 'object' && Object.keys(body).length > 0
-        ),
-        authStatus: Number(resource.httpStatusCode || 0)
+        async command(method, params = {}) {
+            if (closed || socket.readyState !== WebSocket.OPEN) throw new Error('CDP WebSocket is not open.');
+            const id = nextId++;
+            return await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    pending.delete(id);
+                    reject(new Error(`CDP ${method} timed out.`));
+                }, timeoutMs);
+                pending.set(id, { resolve, reject, timer, method });
+                socket.send(JSON.stringify({ id, method, params }), (error) => {
+                    if (!error) return;
+                    const item = pending.get(id);
+                    if (!item) return;
+                    pending.delete(id);
+                    clearTimeout(item.timer);
+                    reject(error);
+                });
+            });
+        },
+        async close() {
+            if (closed) return;
+            closed = true;
+            rejectPending(new Error('CDP session closed.'));
+            await new Promise((resolve) => {
+                const timer = setTimeout(resolve, 500);
+                socket.once('close', () => { clearTimeout(timer); resolve(); });
+                try { socket.close(); } catch { clearTimeout(timer); resolve(); }
+            });
+        }
     };
 }
 
 async function readSnapshot(settings) {
-    const { CDPBridge } = await import('@jackwener/opencli/browser/cdp');
-    const bridge = new CDPBridge();
-    const page = await bridge.connect({ cdpEndpoint: settings.cdpEndpoint, timeout: 10 });
+    const targets = await fetchCdpTargets(settings);
+    const target = selectCdpTarget(targets, settings);
+    if (!target) throw new Error('No ChatGPT page is available on the configured CDP endpoint.');
+    const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
     try {
-        const session = await readAuthenticatedSession(page);
-        const dom = await page.evaluate(`(() => {
+        const expression = `(() => (async () => {
+            let authenticated = false;
+            let authStatus = 0;
+            try {
+                const response = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
+                authStatus = response.status;
+                const text = await response.text();
+                if (text.length <= 262144) {
+                    let body = null;
+                    try { body = JSON.parse(text); } catch {}
+                    authenticated = response.ok && body && typeof body === 'object' && Object.keys(body).length > 0;
+                }
+            } catch {}
             const nodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
             const latest = nodes.length ? nodes[nodes.length - 1] : null;
             const assistantText = latest ? (latest.innerText || latest.textContent || '').trim() : '';
@@ -212,11 +288,20 @@ async function readSnapshot(settings) {
                 const label = [button.getAttribute('aria-label'), button.getAttribute('title'), button.innerText, button.textContent].filter(Boolean).join(' ');
                 return /stop generating|stop streaming/i.test(label);
             });
-            return { url: location.href, assistantText, assistantCount: nodes.length, generating };
-        })()`);
-        return { ...dom, ...session };
+            return { url: location.href, assistantText, assistantCount: nodes.length, generating, authenticated, authStatus };
+        })())()`;
+        const evaluated = await page.command('Runtime.evaluate', {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+            userGesture: false
+        });
+        if (evaluated?.exceptionDetails) throw new Error('ChatGPT DOM evaluation failed.');
+        const value = evaluated?.result?.value;
+        if (!value || typeof value !== 'object') throw new Error('ChatGPT DOM evaluation returned no value.');
+        return value;
     } finally {
-        await bridge.close();
+        await page.close();
     }
 }
 
@@ -389,4 +474,4 @@ class ChatGPTWebWatcher {
 
 }
 
-module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readState, resolveChatGPTWebConfig, writeStateAtomic };
+module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };

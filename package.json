@@ -31,7 +31,7 @@
     "marked": "^14.1.4",
     "simple-git": "^3.36.0",
     "swagger-jsdoc": "^6.3.0",
-    "@jackwener/opencli": "1.8.7"
+    "ws": "8.18.3"
   },
   "homepage": "https://github.com/Jhacarreiro/ai-server-commander#readme",
   "repository": {

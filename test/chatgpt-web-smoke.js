@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ChatGPTWebWatcher, conversationIdFromUrl, resolveChatGPTWebConfig } = require('../serverModules/chatgptWebWatcher');
+const { ChatGPTWebWatcher, conversationIdFromUrl, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
 
 const snap = (overrides = {}) => ({
     url: 'https://chatgpt.com/c/conv-1', authenticated: true, assistantText: 'Answer A', generating: false, ...overrides
@@ -12,6 +12,11 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(conversationIdFromUrl('https://chatgpt.com/c/abc'), 'abc');
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).enabled, false);
     assert.strictEqual(resolveChatGPTWebConfig({}, {}).primeMs, 20000);
+    const selected = selectCdpTarget([
+        { type: 'page', url: 'https://chatgpt.com/c/other', webSocketDebuggerUrl: 'ws://other' },
+        { type: 'page', url: 'https://chatgpt.com/c/conv-1', webSocketDebuggerUrl: 'ws://wanted' }
+    ], { conversationUrl: 'https://chatgpt.com/c/conv-1' });
+    assert.strictEqual(selected.webSocketDebuggerUrl, 'ws://wanted');
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commander-cgpt-'));
     const statePath = path.join(dir, 'state.json');
