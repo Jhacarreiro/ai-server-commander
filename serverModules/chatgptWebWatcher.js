@@ -446,7 +446,7 @@ async function readAccountActivity(settings, knownVersions = {}, followUpConvers
                         }
                     }
                 }
-                if (!completion && (changedItem.attentionState === 'unread' || changedItem.followUp === true)
+                if (!completion && (changedItem.attentionState === 'unread' || changedItem.followUp === true || changedItem.recovery === true)
                     && message && message.author && message.author.role === 'assistant'
                     && message.recipient === 'all'
                     && message.content && message.content.content_type === 'text'
