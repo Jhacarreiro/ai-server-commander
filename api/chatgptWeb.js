@@ -52,24 +52,28 @@ function disabled(res, watcher) {
  * @openapi
  * /api/chatgpt-web/status:
  *   get:
+ *     operationId: getChatGPTWebStatus
  *     summary: Get read-only ChatGPT Web watcher status
  *     responses:
  *       '200': { description: Watcher status }
  *       '503': { description: Watcher disabled }
  * /api/chatgpt-web/latest:
  *   get:
+ *     operationId: getChatGPTWebLatest
  *     summary: Get the latest completed assistant response
  *     responses:
  *       '200': { description: Latest completed response }
  *       '503': { description: Watcher disabled }
  * /api/chatgpt-web/pending:
  *   get:
+ *     operationId: getChatGPTWebPending
  *     summary: Get the unacknowledged completed assistant response, if any
  *     responses:
  *       '200': { description: Pending response or null }
  *       '503': { description: Watcher disabled }
  * /api/chatgpt-web/ack:
  *   post:
+ *     operationId: ackChatGPTWebPending
  *     summary: Acknowledge a pending response fingerprint
  *     responses:
  *       '200': { description: Pending response acknowledged }
@@ -78,6 +82,7 @@ function disabled(res, watcher) {
  *       '503': { description: Watcher disabled }
  * /api/chatgpt-web/poll:
  *   post:
+ *     operationId: pollChatGPTWeb
  *     summary: Perform one deterministic read-only poll
  *     responses:
  *       '200': { description: Poll result }
