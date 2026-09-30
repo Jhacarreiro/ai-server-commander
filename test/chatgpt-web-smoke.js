@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ChatGPTWebWatcher, approveJitConsent, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
+const { ChatGPTWebWatcher, allowTargetMessageId, approveJitConsent, buildJitAllowPayload, conversationIdFromUrl, readState, resolveChatGPTWebConfig, selectCdpTarget } = require('../serverModules/chatgptWebWatcher');
 const { nextPollDelay } = require('../api/chatgptWeb');
 
 const snap = (overrides = {}) => ({
@@ -16,6 +16,27 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(resolveChatGPTWebConfig({ productionDomain: 'https://terminal.example.com' }, {}).approvalDomain, 'terminal.example.com');
     assert.strictEqual((await approveJitConsent({ approvalDomain: 'terminal.example.com' }, { domain: 'other.example.com', operation: 'runTerminalScript' })).reason, 'approval_domain_mismatch');
     assert.strictEqual((await approveJitConsent({ approvalDomain: 'terminal.example.com' }, { domain: 'terminal.example.com', operation: 'otherOperation' })).reason, 'approval_operation_mismatch');
+    assert.strictEqual(allowTargetMessageId([
+        { name: 'deny', deny: { target_message_id: 'deny-target' } },
+        { name: 'allow', allow: { target_message_id: 'allow-target' } }
+    ]), 'allow-target');
+    assert.strictEqual(allowTargetMessageId([
+        { name: 'allow', allow_once: { target_message_id: 'once-target' } }
+    ]), 'once-target');
+    const allowPayload = buildJitAllowPayload({
+        conversationId: 'conv-jit',
+        confirmMessageId: 'confirm-jit',
+        targetMessageId: 'target-jit',
+        modelSlug: 'model-jit',
+        gizmoId: 'gizmo-jit'
+    });
+    assert.strictEqual(allowPayload.conversation_id, 'conv-jit');
+    assert.strictEqual(allowPayload.parent_message_id, 'target-jit');
+    assert.strictEqual(allowPayload.messages[0].author.role, 'tool');
+    assert.strictEqual(allowPayload.messages[0].author.name, 'api_tool.call_tool');
+    assert.strictEqual(allowPayload.messages[0].metadata.jit_plugin_data.from_client.type, 'allow');
+    assert.strictEqual(allowPayload.messages[0].metadata.jit_plugin_data.from_client.target_message_id, 'target-jit');
+    assert.strictEqual(allowPayload.messages[0].metadata.jit_plugin_data.from_client.remember_answer, false);
     assert.strictEqual(nextPollDelay({ settings: { conversationUrl: null, pollMs: 5000 } }, null), 5000);
     assert.strictEqual(nextPollDelay({ settings: { conversationUrl: 'https://chatgpt.com/c/x', pollMs: 5000 } }, null), 5000);
     const selected = selectCdpTarget([

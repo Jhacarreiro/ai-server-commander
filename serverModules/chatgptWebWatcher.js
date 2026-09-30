@@ -325,6 +325,13 @@ async function readSnapshot(settings) {
     }
 }
 
+function allowTargetMessageId(actions) {
+    const action = (Array.isArray(actions) ? actions : [])
+        .find((item) => item?.name === 'allow' && (item?.allow?.target_message_id || item?.allow_once?.target_message_id));
+    const target = action?.allow?.target_message_id || action?.allow_once?.target_message_id;
+    return target ? String(target) : null;
+}
+
 async function readAccountActivity(settings, knownVersions = {}) {
     const targets = await fetchCdpTargets(settings);
     const target = selectCdpTarget(targets, settings);
@@ -394,10 +401,8 @@ async function readAccountActivity(settings, knownVersions = {}) {
                     && approvalDomain
                     && String(fromServer?.body?.domain || '').toLowerCase() === approvalDomain
                     && fromServer?.body?.operation === 'runTerminalScript') {
-                    const allowAction = (Array.isArray(fromServer?.body?.actions) ? fromServer.body.actions : [])
-                        .find(action => action?.type === 'allow' && action?.allow?.target_message_id);
-                    if (allowAction) {
-                        const targetMessageId = String(allowAction.allow.target_message_id);
+                    const targetMessageId = allowTargetMessageId(fromServer?.body?.actions);
+                    if (targetMessageId) {
                         const resolved = (Array.isArray(node.children) ? node.children : []).some(childId => {
                             const child = mapping[childId]?.message;
                             const fromClient = child?.metadata?.jit_plugin_data?.from_client;
@@ -466,6 +471,192 @@ async function readAccountActivity(settings, knownVersions = {}) {
     }
 }
 
+function buildJitAllowPayload(consent) {
+    const messageId = crypto.randomUUID();
+    return {
+        action: 'next',
+        conversation_id: consent.conversationId,
+        parent_message_id: consent.targetMessageId,
+        model: consent.modelSlug || undefined,
+        gizmo_id: consent.gizmoId || undefined,
+        conversation_mode: consent.gizmoId ? { kind: 'gizmo_interaction', gizmo_id: consent.gizmoId } : undefined,
+        timezone_offset_min: new Date().getTimezoneOffset(),
+        history_and_training_disabled: false,
+        force_paragen: false,
+        force_rate_limit: false,
+        supported_encodings: ['v1'],
+        messages: [{
+            id: messageId,
+            author: { metadata: {}, name: 'api_tool.call_tool', role: 'tool' },
+            channel: null,
+            content: { content_type: 'text', parts: [''] },
+            create_time: Date.now() / 1000,
+            end_turn: null,
+            metadata: {
+                jit_plugin_data: {
+                    from_client: {
+                        remember_answer: false,
+                        target_message_id: consent.targetMessageId,
+                        type: 'allow'
+                    }
+                }
+            },
+            recipient: 'all',
+            status: 'finished_successfully',
+            update_time: null,
+            weight: 1
+        }]
+    };
+}
+
+function sentinelRuntimeSource() {
+    return String.raw`
+      const sentinelEncode = (value) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(value))));
+      const sentinelRandomItem = (items) => items.length ? items[Math.floor(Math.random() * items.length)] : '';
+      const sentinelFingerprint = () => {
+        const memory = performance.memory;
+        let navKey = 'navigator';
+        try {
+          const keys = Object.keys(Object.getPrototypeOf(navigator));
+          if (keys.length) navKey = sentinelRandomItem(keys);
+        } catch {}
+        let navValue = '';
+        try { navValue = String(navigator[navKey]); } catch { navValue = navKey; }
+        return [
+          screen?.width + screen?.height,
+          String(new Date()),
+          memory?.jsHeapSizeLimit ?? null,
+          Math.random(),
+          navigator.userAgent,
+          sentinelRandomItem(Array.from(document.scripts || []).map((element) => element?.src).filter(Boolean)),
+          (Array.from(document.scripts || []).map((element) => element?.src?.match('c/[^/]*/_')).filter((value) => value?.length)[0] ?? [])[0]
+            ?? document.documentElement.getAttribute('data-build'),
+          navigator.language,
+          navigator.languages?.join(','),
+          Math.random(),
+          navKey + '−' + navValue,
+          sentinelRandomItem(Object.keys(document)),
+          sentinelRandomItem(Object.keys(window)),
+          performance.now(),
+          {},
+          [...new URLSearchParams(location.search).keys()].join(','),
+          navigator.hardwareConcurrency,
+          performance.timeOrigin,
+          Number('ai' in window),
+          Number('createPRNG' in window),
+          Number('cache' in window),
+          Number('data' in window),
+          Number('solana' in window),
+          Number('dump' in window),
+          Number('InstallTrigger' in window)
+        ];
+      };
+      const sentinelInitialProof = () => {
+        const startedAt = performance.now();
+        const value = sentinelFingerprint();
+        value[3] = 1;
+        value[9] = performance.now() - startedAt;
+        return 'gAAAAAC' + sentinelEncode(value);
+      };
+      const sentinelHash = (value) => {
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < value.length; i += 1) {
+          hash ^= value.charCodeAt(i);
+          hash = Math.imul(hash, 0x1000193) >>> 0;
+        }
+        hash ^= hash >>> 16;
+        hash = Math.imul(hash, 0x85ebca6b) >>> 0;
+        hash ^= hash >>> 13;
+        hash = Math.imul(hash, 0xc2b2ae35) >>> 0;
+        return ((hash ^ (hash >>> 16)) >>> 0).toString(16).padStart(8, '0');
+      };
+      const sentinelProofOfWork = (seed, difficulty) => {
+        const startedAt = performance.now();
+        const value = sentinelFingerprint();
+        for (let i = 0; i < 500000; i += 1) {
+          value[3] = i;
+          value[9] = Math.round(performance.now() - startedAt);
+          const encoded = sentinelEncode(value);
+          if (sentinelHash(seed + encoded).substring(0, difficulty.length) <= difficulty) return 'gAAAAAB' + encoded + '~S';
+        }
+        return null;
+      };
+      const sentinelTurnstile = async (dx, key) => {
+        const store = new Map();
+        let count = 0;
+        const xor = (value, mask) => {
+          let result = '';
+          for (let i = 0; i < value.length; i += 1) result += String.fromCharCode(value.charCodeAt(i) ^ mask.charCodeAt(i % mask.length));
+          return result;
+        };
+        const run = async () => {
+          while ((store.get(9) || []).length > 0) {
+            const [op, ...args] = (store.get(9) || []).shift() || [];
+            const fn = store.get(op);
+            const result = fn?.(...args);
+            if (result && typeof result.then === 'function') await Promise.resolve(result);
+            count += 1;
+          }
+        };
+        return await new Promise((resolve, reject) => {
+          store.clear();
+          store.set(0, (value) => sentinelTurnstile(value, String(store.get(16))));
+          store.set(1, (out, mask) => store.set(out, xor(String(store.get(out)), String(store.get(mask)))));
+          store.set(2, (out, value) => store.set(out, value));
+          store.set(5, (out, value) => { const current = store.get(out); Array.isArray(current) ? current.push(store.get(value)) : store.set(out, current + store.get(value)); });
+          store.set(27, (out, value) => { const current = store.get(out); Array.isArray(current) ? current.splice(current.indexOf(store.get(value)), 1) : store.set(out, current - store.get(value)); });
+          store.set(29, (out, left, right) => store.set(out, Number(store.get(left)) < Number(store.get(right))));
+          store.set(33, (out, left, right) => store.set(out, Number(store.get(left)) * Number(store.get(right))));
+          store.set(35, (out, left, right) => { const divisor = Number(store.get(right)); store.set(out, divisor === 0 ? 0 : Number(store.get(left)) / divisor); });
+          store.set(6, (out, object, prop) => { const value = store.get(object); store.set(out, value[String(store.get(prop))]); });
+          store.set(7, (fn, ...args) => store.get(fn)(...args.map((arg) => store.get(arg))));
+          store.set(17, (out, fn, ...args) => { try { const value = store.get(fn)(...args.map((arg) => store.get(arg))); if (value && typeof value.then === 'function') return value.then((resolved) => store.set(out, resolved)).catch((error) => store.set(out, String(error))); store.set(out, value); } catch (error) { store.set(out, String(error)); } });
+          store.set(13, (out, fn, ...args) => { try { store.get(fn)(...args.map((arg) => store.get(arg))); } catch (error) { store.set(out, String(error)); } });
+          store.set(8, (out, value) => store.set(out, store.get(value)));
+          store.set(10, window);
+          store.set(11, (out, pattern) => store.set(out, (Array.from(document.scripts || []).map((script) => script?.src?.match(String(store.get(pattern)))).filter((value) => value?.length)[0] ?? [])[0] ?? null));
+          store.set(12, (out) => store.set(out, store));
+          store.set(14, (out, value) => store.set(out, JSON.parse(String(store.get(value)))));
+          store.set(15, (out, value) => store.set(out, JSON.stringify(store.get(value))));
+          store.set(18, (value) => store.set(value, atob(String(store.get(value)))));
+          store.set(19, (value) => store.set(value, btoa(String(store.get(value)))));
+          store.set(20, (left, right, fn, ...args) => store.get(left) === store.get(right) ? store.get(fn)(...args) : null);
+          store.set(21, (left, right, delta, fn, ...args) => Math.abs(Number(store.get(left)) - Number(store.get(right))) > Number(store.get(delta)) ? store.get(fn)(...args) : null);
+          store.set(23, (value, fn, ...args) => typeof store.get(value) !== 'undefined' ? store.get(fn)(...args) : null);
+          store.set(24, (out, object, prop) => { const value = store.get(object); const fn = value[String(store.get(prop))]; store.set(out, fn.bind(value)); });
+          store.set(34, (out, value) => Promise.resolve(store.get(value)).then((resolved) => store.set(out, resolved)));
+          store.set(22, (out, queue) => { const old = [...store.get(9)]; store.set(9, [...queue]); return run().catch((error) => store.set(out, String(error))).finally(() => store.set(9, old)); });
+          store.set(28, () => {});
+          store.set(26, () => {});
+          store.set(25, () => {});
+          store.set(16, key);
+          let done = false;
+          const timer = setTimeout(() => { if (!done) { done = true; resolve(String(count)); } }, 500);
+          store.set(3, (value) => { if (!done) { done = true; clearTimeout(timer); resolve(btoa(String(value))); } });
+          store.set(4, (value) => { if (!done) { done = true; clearTimeout(timer); reject(new Error(btoa(String(value)))); } });
+          store.set(30, (out, target, slots, queue) => {
+            const arrayMode = Array.isArray(queue);
+            const slotIds = arrayMode ? slots : [];
+            const ops = (arrayMode ? queue : slots) ?? [];
+            store.set(out, (...values) => {
+              if (done) return;
+              const old = [...store.get(9)];
+              if (arrayMode) for (let i = 0; i < slotIds.length; i += 1) store.set(slotIds[i], values[i]);
+              store.set(9, [...ops]);
+              return run().then(() => store.get(target)).catch((error) => String(error)).finally(() => store.set(9, old));
+            });
+          });
+          try {
+            store.set(9, JSON.parse(xor(atob(dx), String(store.get(16)))));
+            run().catch((error) => resolve(btoa(count + ': ' + String(error))));
+          } catch (error) {
+            resolve(btoa(count + ': ' + String(error)));
+          }
+        });
+      };
+    `;
+}
+
 async function approveJitConsent(settings, consent) {
     if (!consent || !settings.approvalDomain) return { ok: false, reason: 'approval_not_configured' };
     if (String(consent.domain || '').toLowerCase() !== settings.approvalDomain) return { ok: false, reason: 'approval_domain_mismatch' };
@@ -475,46 +666,39 @@ async function approveJitConsent(settings, consent) {
     if (!target) return { ok: false, reason: 'chatgpt_page_unavailable' };
     const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
     try {
-        const consentJson = JSON.stringify(consent);
+        const payloadJson = JSON.stringify(buildJitAllowPayload(consent));
         const expression = `(() => (async () => {
-            const consent = ${consentJson};
+            const payload = ${payloadJson};
+            ${sentinelRuntimeSource()}
             const sessionResponse = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
             const session = await sessionResponse.json().catch(() => null);
-            const token = session && session.accessToken;
+            const token = session?.accessToken;
+            const accountId = session?.account?.id || session?.account?.account_id || session?.account?.accountId || null;
             if (!sessionResponse.ok || !token) return { ok: false, status: sessionResponse.status || 0, reason: 'authentication_required' };
-            const payload = {
-                action: 'next',
-                messages: [{
-                    id: crypto.randomUUID(),
-                    author: { role: consent.authorRole || 'tool', name: consent.authorName || null },
-                    content: { content_type: 'text', parts: [''] },
-                    recipient: 'all',
-                    metadata: {
-                        jit_plugin_data: {
-                            from_client: {
-                                type: 'allow',
-                                target_message_id: consent.targetMessageId
-                            }
-                        }
-                    }
-                }],
-                conversation_id: consent.conversationId,
-                parent_message_id: consent.confirmMessageId,
-                model: consent.modelSlug || undefined,
-                timezone_offset_min: new Date().getTimezoneOffset(),
-                history_and_training_disabled: false,
-                arkose_token: null,
-                conversation_mode: consent.gizmoId ? {
-                    kind: 'gizmo_interaction',
-                    gizmo_id: consent.gizmoId
-                } : undefined,
-                force_paragen: false,
-                force_rate_limit: false
-            };
-            const response = await fetch('/backend-api/conversation', {
-                method: 'POST',
-                headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+            const requirementsKey = sentinelInitialProof();
+            const prepareHeaders = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+            if (accountId) prepareHeaders['ChatGPT-Account-ID'] = accountId;
+            const prepareResponse = await fetch('/backend-api/sentinel/chat-requirements/prepare', {
+              method: 'POST', headers: prepareHeaders, body: JSON.stringify({ p: requirementsKey }), credentials: 'include'
+            });
+            const requirements = await prepareResponse.json().catch(() => null);
+            if (!prepareResponse.ok || !requirements || requirements.force_login) {
+              return { ok: false, status: prepareResponse.status, reason: requirements?.force_login ? 'force_login' : 'integrity_prepare_http_' + prepareResponse.status };
+            }
+            const proof = requirements?.proofofwork?.required
+              ? sentinelProofOfWork(requirements.proofofwork.seed, requirements.proofofwork.difficulty)
+              : null;
+            const turnstile = requirements?.turnstile?.required
+              ? await sentinelTurnstile(requirements.turnstile.dx, requirementsKey)
+              : null;
+            const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+            if (accountId) headers['ChatGPT-Account-ID'] = accountId;
+            if (requirements.token) headers['OpenAI-Sentinel-Chat-Requirements-Token'] = requirements.token;
+            else if (requirements.prepare_token) headers['OpenAI-Sentinel-Chat-Requirements-Prepare-Token'] = requirements.prepare_token;
+            if (proof) headers['OpenAI-Sentinel-Proof-Token'] = proof;
+            if (turnstile) headers['OpenAI-Sentinel-Turnstile-Token'] = turnstile;
+            const response = await fetch('/backend-api/f/conversation', {
+              method: 'POST', headers, body: JSON.stringify(payload), credentials: 'include'
             });
             return { ok: response.ok, status: response.status, reason: response.ok ? 'allowed' : 'approval_http_' + response.status };
         })())()`;
@@ -822,4 +1006,4 @@ class ChatGPTWebWatcher {
 
 }
 
-module.exports = { ChatGPTWebWatcher, approveJitConsent, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
+module.exports = { ChatGPTWebWatcher, allowTargetMessageId, approveJitConsent, buildJitAllowPayload, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
