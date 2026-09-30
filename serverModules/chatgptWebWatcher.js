@@ -72,7 +72,7 @@ function fingerprint(conversationId, text) {
 
 function blankState() {
     return {
-        version: 2,
+        version: 3,
         status: 'idle',
         reason: 'not_polled',
         updatedAt: null,
@@ -89,6 +89,8 @@ function blankState() {
         pendingFingerprint: null,
         pendingSince: null,
         ackedAt: null,
+        accountPrimedAt: null,
+        accountConversationVersions: {},
         lastError: null
     };
 }
@@ -113,8 +115,11 @@ function rememberFingerprint(state, fp) {
 function readState(filePath) {
     try {
         const state = { ...blankState(), ...JSON.parse(fs.readFileSync(filePath, 'utf8')) };
-        state.version = 2;
+        state.version = 3;
         state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
+        state.accountConversationVersions = state.accountConversationVersions && typeof state.accountConversationVersions === 'object' && !Array.isArray(state.accountConversationVersions)
+            ? state.accountConversationVersions
+            : {};
         return state;
     } catch { return blankState(); }
 }
@@ -136,6 +141,7 @@ function publicStatus(settings, state) {
         updatedAt: state.updatedAt,
         currentConversationId: state.currentConversationId,
         configuredConversationId: conversationIdFromUrl(settings.conversationUrl),
+        mode: settings.conversationUrl ? 'conversation' : 'account',
         pollMs: settings.pollMs,
         stableMs: settings.stableMs,
         primeMs: settings.primeMs,
@@ -307,10 +313,105 @@ async function readSnapshot(settings) {
     }
 }
 
+async function readAccountActivity(settings, knownVersions = {}) {
+    const targets = await fetchCdpTargets(settings);
+    const target = selectCdpTarget(targets, settings);
+    if (!target) throw new Error('No ChatGPT page is available on the configured CDP endpoint.');
+    const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
+    try {
+        const knownJson = JSON.stringify(knownVersions && typeof knownVersions === 'object' ? knownVersions : {});
+        const expression = `(() => (async () => {
+            const known = ${knownJson};
+            const sessionResponse = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
+            const session = await sessionResponse.json().catch(() => null);
+            const token = session && session.accessToken;
+            if (!sessionResponse.ok || !token) {
+                return { authenticated: false, authStatus: sessionResponse.status || 0, conversations: [], changed: null };
+            }
+            const headers = { Authorization: 'Bearer ' + token };
+            const listResponse = await fetch('/backend-api/conversations?offset=0&limit=20&order=updated&is_archived=false', { headers, cache: 'no-store' });
+            if (!listResponse.ok) {
+                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations: [], changed: null };
+            }
+            const list = await listResponse.json();
+            const items = Array.isArray(list && list.items) ? list.items : [];
+            const conversations = items.map(item => ({
+                id: String(item.id || item.conversation_id || ''),
+                updateTime: String(item.update_time || item.updated_at || ''),
+                asyncStatus: item.async_status == null ? null : item.async_status,
+                version: String(item.update_time || item.updated_at || '') + '|' + String(item.async_status == null ? '' : item.async_status)
+            })).filter(item => item.id);
+            const changedItems = conversations.filter(item => known[item.id] !== item.version).slice().reverse();
+            const changedItem = changedItems[0] || null;
+            if (!changedItem) {
+                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations, changed: null };
+            }
+
+            const detailResponse = await fetch('/backend-api/conversation/' + encodeURIComponent(changedItem.id), { headers, cache: 'no-store' });
+            if (!detailResponse.ok) {
+                return { authenticated: true, authStatus: sessionResponse.status, listStatus: listResponse.status, conversations, changed: { ...changedItem, detailStatus: detailResponse.status, completion: null } };
+            }
+            const detail = await detailResponse.json();
+            const mapping = detail && detail.mapping && typeof detail.mapping === 'object' ? detail.mapping : {};
+            let nodeId = detail && detail.current_node;
+            let completion = null;
+            let sawInProgress = false;
+            let steps = 0;
+            while (nodeId && mapping[nodeId] && steps < 512) {
+                const node = mapping[nodeId];
+                const message = node && node.message;
+                if (message && message.status === 'in_progress') sawInProgress = true;
+                if (message && message.author && message.author.role === 'user') break;
+                if (message && message.author && message.author.role === 'assistant'
+                    && message.recipient === 'all'
+                    && message.content && message.content.content_type === 'text'
+                    && message.status === 'finished_successfully'
+                    && message.end_turn === true) {
+                    const parts = Array.isArray(message.content.parts) ? message.content.parts : [];
+                    const text = parts.filter(part => typeof part === 'string').join('').trim();
+                    if (text) {
+                        completion = {
+                            messageId: String(message.id || nodeId),
+                            text,
+                            chars: text.length,
+                            completedAt: message.update_time || message.create_time || null
+                        };
+                    }
+                    break;
+                }
+                nodeId = node && node.parent;
+                steps += 1;
+            }
+            return {
+                authenticated: true,
+                authStatus: sessionResponse.status,
+                listStatus: listResponse.status,
+                conversations,
+                changed: { ...changedItem, detailStatus: detailResponse.status, sawInProgress, completion }
+            };
+        })())()`;
+        const evaluated = await page.command('Runtime.evaluate', {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+            userGesture: false
+        });
+        if (evaluated?.exceptionDetails) throw new Error('ChatGPT account evaluation failed.');
+        const value = evaluated?.result?.value;
+        if (!value || typeof value !== 'object') throw new Error('ChatGPT account evaluation returned no value.');
+        return value;
+    } finally {
+        await page.close();
+    }
+}
+
+
 class ChatGPTWebWatcher {
-    constructor({ settings, snapshotReader, now } = {}) {
+    constructor({ settings, snapshotReader, accountReader, now } = {}) {
         this.settings = settings || resolveChatGPTWebConfig();
         this.snapshotReader = snapshotReader || (() => readSnapshot(this.settings));
+        this.accountReader = accountReader || ((knownVersions) => readAccountActivity(this.settings, knownVersions));
+        this.useAccountMode = !this.settings.conversationUrl && !snapshotReader;
         this.now = now || (() => Date.now());
     }
 
@@ -347,7 +448,135 @@ class ChatGPTWebWatcher {
     }
     save(state) { writeStateAtomic(this.settings.statePath, state); return state; }
 
+    async pollAccount() {
+        let state = this.getState();
+        const nowMs = this.now();
+        const nowIso = new Date(nowMs).toISOString();
+        if (!this.settings.enabled) return { ...publicStatus(this.settings, state), newResponse: false };
+        if (state.pendingFingerprint) return { ...publicStatus(this.settings, state), newResponse: false };
+
+        let activity;
+        try { activity = await this.accountReader(state.accountConversationVersions || {}); }
+        catch (error) {
+            state = { ...state, status: 'error', reason: 'account_snapshot_failed', updatedAt: nowIso, lastError: String(error?.message || error).slice(0, 500) };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        if (!activity.authenticated) {
+            state = { ...state, status: 'needs_human', reason: 'authentication_required', updatedAt: nowIso, lastError: null };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+        if (activity.listStatus && activity.listStatus !== 200) {
+            state = { ...state, status: 'error', reason: 'conversation_list_failed', updatedAt: nowIso, lastError: `conversation list HTTP ${activity.listStatus}` };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        const conversations = Array.isArray(activity.conversations) ? activity.conversations : [];
+        if (!state.accountPrimedAt) {
+            const baseline = {};
+            for (const item of conversations) if (item?.id) baseline[item.id] = String(item.version || '');
+            state = {
+                ...state,
+                version: 3,
+                status: 'idle',
+                reason: 'account_baseline_recorded',
+                updatedAt: nowIso,
+                accountPrimedAt: nowIso,
+                accountConversationVersions: baseline,
+                lastError: null
+            };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false, baseline: true };
+        }
+
+        if (!activity.changed) {
+            const currentIds = new Set(conversations.map(item => item?.id).filter(Boolean));
+            const pruned = {};
+            for (const [id, version] of Object.entries(state.accountConversationVersions || {})) if (currentIds.has(id)) pruned[id] = version;
+            state = { ...state, status: 'idle', reason: 'account_no_changes', updatedAt: nowIso, accountConversationVersions: pruned, lastError: null };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        const changed = activity.changed;
+        const versions = { ...(state.accountConversationVersions || {}) };
+        if (changed.id) versions[changed.id] = String(changed.version || '');
+        const currentIds = new Set(conversations.map(item => item?.id).filter(Boolean));
+        for (const id of Object.keys(versions)) if (!currentIds.has(id)) delete versions[id];
+
+        if (changed.detailStatus && changed.detailStatus !== 200) {
+            if (changed.id) delete versions[changed.id];
+            state = { ...state, status: 'error', reason: 'conversation_detail_failed', updatedAt: nowIso, accountConversationVersions: versions, lastError: `conversation detail HTTP ${changed.detailStatus}` };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        const completion = changed.completion;
+        if (!completion || !completion.text) {
+            state = {
+                ...state,
+                status: changed.sawInProgress ? 'generating' : 'stabilizing',
+                reason: changed.sawInProgress ? 'account_response_in_progress' : 'account_conversation_updated',
+                updatedAt: nowIso,
+                currentConversationId: changed.id || state.currentConversationId,
+                accountConversationVersions: versions,
+                lastError: null
+            };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        const fp = fingerprint(changed.id, `${completion.messageId || ''}\0${completion.text}`);
+        if (normalizeRecentFingerprints(state.recentFingerprints).includes(fp)) {
+            state = {
+                ...state,
+                status: 'completed',
+                reason: 'response_seen_before',
+                updatedAt: nowIso,
+                currentConversationId: changed.id,
+                accountConversationVersions: versions,
+                lastCompletedFingerprint: fp,
+                lastCompletedAt: nowIso,
+                recentFingerprints: rememberFingerprint(state, fp),
+                lastError: null
+            };
+            this.save(state);
+            return { ...publicStatus(this.settings, state), newResponse: false };
+        }
+
+        state = {
+            ...state,
+            version: 3,
+            status: 'completed',
+            reason: 'new_response',
+            updatedAt: nowIso,
+            currentConversationId: changed.id,
+            accountConversationVersions: versions,
+            lastCompletedFingerprint: fp,
+            lastCompletedAt: nowIso,
+            recentFingerprints: rememberFingerprint(state, fp),
+            latest: {
+                conversationId: changed.id,
+                url: `https://chatgpt.com/c/${changed.id}`,
+                fingerprint: fp,
+                text: String(completion.text),
+                chars: Number(completion.chars || String(completion.text).length),
+                completedAt: completion.completedAt ? new Date(Number(completion.completedAt) * 1000).toISOString() : nowIso
+            },
+            pendingFingerprint: fp,
+            pendingSince: nowIso,
+            ackedAt: null,
+            lastError: null
+        };
+        this.save(state);
+        return { ...publicStatus(this.settings, state), newResponse: true, baseline: false };
+    }
+
     async poll() {
+        if (this.useAccountMode) return await this.pollAccount();
         let state = this.getState();
         const nowMs = this.now();
         const nowIso = new Date(nowMs).toISOString();
@@ -365,7 +594,7 @@ class ChatGPTWebWatcher {
         const configuredId = conversationIdFromUrl(this.settings.conversationUrl);
         const previousId = state.currentConversationId;
         const conversationChanged = Boolean(currentId && currentId !== previousId);
-        const common = { ...state, version: 2, updatedAt: nowIso, currentConversationId: currentId, lastError: null };
+        const common = { ...state, version: 3, updatedAt: nowIso, currentConversationId: currentId, lastError: null };
         const finish = (patch, extra = {}) => {
             state = { ...common, ...patch };
             state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
@@ -477,4 +706,4 @@ class ChatGPTWebWatcher {
 
 }
 
-module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
+module.exports = { ChatGPTWebWatcher, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
