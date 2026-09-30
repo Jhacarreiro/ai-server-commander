@@ -492,10 +492,8 @@ async function approveJitConsent(settings, consent) {
                     metadata: {
                         jit_plugin_data: {
                             from_client: {
-                                user_action: {
-                                    data: { type: 'allow' },
-                                    target_message_id: consent.targetMessageId
-                                }
+                                type: 'allow',
+                                target_message_id: consent.targetMessageId
                             }
                         }
                     }
