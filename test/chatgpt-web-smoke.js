@@ -421,6 +421,27 @@ const snap = (overrides = {}) => ({
     assert.strictEqual((await recoveryWatcher.poll()).reason, 'new_response');
     assert.strictEqual(recoveryWatcher.getPending().pending.text, 'Recovered response');
 
+    // Regression: recovery may find the terminal answer immediately, without an intermediate in-progress poll.
+    const recoveryDonePath = path.join(dir, 'attention-recovery-done.json');
+    let recoveryDoneStep = 0;
+    const recoveryDoneWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: recoveryDonePath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: async () => {
+            recoveryDoneStep += 1;
+            if (recoveryDoneStep === 1) {
+                return { authenticated: true, authStatus: 200, sourceAvailable: true, conversations: [{ id: 'acct-rd', attentionState: 'idle', recencyAt: 1, route: '/g/g-x/c/acct-rd', latestAssistantTurnCreatedAt: null, version: 'idle|1' }], changed: null };
+            }
+            return { authenticated: true, authStatus: 200, sourceAvailable: true, conversations: [{ id: 'acct-rd', attentionState: 'idle', recencyAt: 2, route: '/g/g-x/c/acct-rd', latestAssistantTurnCreatedAt: null, version: 'idle|2' }], changed: { id: 'acct-rd', attentionState: 'idle', recencyAt: 2, route: '/g/g-x/c/acct-rd', version: 'idle|2', recovery: true, detailStatus: 200, consent: null, sawInProgress: false, completion: { messageId: 'rd-final', text: 'Recovered immediately', chars: 21, completedAt: 1790777000 } } };
+        },
+        now: () => followNow
+    });
+    assert.strictEqual((await recoveryDoneWatcher.poll()).reason, 'attention_baseline_recorded');
+    followNow += 5000;
+    const recoveryDone = await recoveryDoneWatcher.poll();
+    assert.strictEqual(recoveryDone.reason, 'new_response');
+    assert.strictEqual(recoveryDone.newResponse, true);
+    assert.strictEqual(recoveryDoneWatcher.getPending().pending.text, 'Recovered immediately');
+
     const unmatchedPath = path.join(dir, 'attention-unmatched.json');
     let unmatchedStep = 0;
     const unmatchedWatcher = new ChatGPTWebWatcher({
