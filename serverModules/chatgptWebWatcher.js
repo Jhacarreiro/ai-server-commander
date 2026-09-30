@@ -347,6 +347,12 @@ async function readAccountActivity(settings, knownVersions = {}, followUpConvers
             const known = ${knownJson};
             const followUpConversationId = ${followUpJson};
             const approvalDomain = ${approvalDomainJson};
+            const allowTargetMessageId = (actions) => {
+                const action = (Array.isArray(actions) ? actions : [])
+                    .find((item) => item?.name === 'allow' && (item?.allow?.target_message_id || item?.allow_once?.target_message_id));
+                const target = action?.allow?.target_message_id || action?.allow_once?.target_message_id;
+                return target ? String(target) : null;
+            };
             const anchor = document.querySelector('a[href*="/c/"]');
             const row = anchor && (anchor.closest('[role="group"].sidebar-item') || anchor.parentElement);
             const fiberKey = row && Object.keys(row).find(key => key.startsWith('__reactFiber$'));
@@ -836,8 +842,16 @@ class ChatGPTWebWatcher {
         }
 
         const changed = activity.changed;
+        const currentIds = new Set(conversations.map(item => item.id).filter(Boolean));
+        const processedVersions = {};
+        for (const [id, version] of Object.entries(state.accountConversationVersions || {})) {
+            if (currentIds.has(id)) processedVersions[id] = version;
+        }
+        const changedConversation = conversations.find(item => item.id === changed.id);
+        if (changedConversation) processedVersions[changed.id] = String(changedConversation.version || '');
+
         if (changed.detailStatus && changed.detailStatus !== 200) {
-            const retryVersions = { ...versions };
+            const retryVersions = { ...processedVersions };
             delete retryVersions[changed.id];
             state = { ...state, status: 'error', reason: 'conversation_detail_failed', updatedAt: nowIso, accountConversationVersions: retryVersions, lastError: `conversation detail HTTP ${changed.detailStatus}` };
             this.save(state);
@@ -846,13 +860,13 @@ class ChatGPTWebWatcher {
 
         if (changed.attentionState === 'waiting' || (changed.recovery && changed.consent)) {
             if (!changed.consent) {
-                state = { ...state, status: 'needs_human', reason: 'attention_waiting_unmatched', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
+                state = { ...state, status: 'needs_human', reason: 'attention_waiting_unmatched', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: processedVersions, lastError: null };
                 this.save(state);
                 return { ...publicStatus(this.settings, state), newResponse: false };
             }
             const approval = await this.consentApprover(changed.consent).catch(error => ({ ok: false, reason: String(error?.message || error) }));
             if (!approval?.ok) {
-                const retryVersions = { ...versions };
+                const retryVersions = { ...processedVersions };
                 delete retryVersions[changed.id];
                 state = { ...state, status: 'error', reason: 'jit_consent_allow_failed', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: retryVersions, lastError: String(approval?.reason || 'approval_failed') };
                 this.save(state);
@@ -864,7 +878,7 @@ class ChatGPTWebWatcher {
                 reason: 'jit_consent_allowed',
                 updatedAt: nowIso,
                 currentConversationId: changed.id,
-                accountConversationVersions: versions,
+                accountConversationVersions: processedVersions,
                 followUpConversationId: changed.id,
                 followUpSince: nowIso,
                 lastError: null
@@ -882,7 +896,7 @@ class ChatGPTWebWatcher {
                 reason: shouldFollow ? 'consent_followup_in_progress' : (changed.recovery ? 'consent_recovery_clear' : 'unread_without_terminal_response'),
                 updatedAt: nowIso,
                 currentConversationId: changed.id,
-                accountConversationVersions: versions,
+                accountConversationVersions: processedVersions,
                 followUpConversationId: shouldFollow ? changed.id : null,
                 followUpSince: shouldFollow ? (state.followUpSince || nowIso) : null,
                 lastError: null
@@ -893,7 +907,7 @@ class ChatGPTWebWatcher {
 
         const fp = fingerprint(changed.id, `${completion.messageId || ''}\0${completion.text}`);
         if (normalizeRecentFingerprints(state.recentFingerprints).includes(fp)) {
-            state = { ...state, status: 'completed', reason: 'response_seen_before', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastCompletedFingerprint: fp, lastCompletedAt: nowIso, recentFingerprints: rememberFingerprint(state, fp), followUpConversationId: null, followUpSince: null, lastError: null };
+            state = { ...state, status: 'completed', reason: 'response_seen_before', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: processedVersions, lastCompletedFingerprint: fp, lastCompletedAt: nowIso, recentFingerprints: rememberFingerprint(state, fp), followUpConversationId: null, followUpSince: null, lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
@@ -905,7 +919,7 @@ class ChatGPTWebWatcher {
             reason: 'new_response',
             updatedAt: nowIso,
             currentConversationId: changed.id,
-            accountConversationVersions: versions,
+            accountConversationVersions: processedVersions,
             lastCompletedFingerprint: fp,
             lastCompletedAt: nowIso,
             recentFingerprints: rememberFingerprint(state, fp),
