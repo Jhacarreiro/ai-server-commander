@@ -182,10 +182,99 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(r.reason, 'configured_conversation_not_open');
 
     const persisted = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-    assert.strictEqual(persisted.version, 2);
+    assert.strictEqual(persisted.version, 3);
     assert.ok(Array.isArray(persisted.recentFingerprints));
     assert.ok(persisted.recentFingerprints.length >= 3);
     assert.ok(persisted.recentFingerprints.length <= 64);
 
-    console.log('PASS chatgpt-web exact-once history, per-conversation priming, stability, durable pending/ack, restart and needs_human behavior');
+    // Account mode: baseline existing recent conversations without notifying,
+    // observe an in-progress update, then emit exactly once when the same
+    // conversation acquires a terminal assistant reply.
+    const accountStatePath = path.join(dir, 'account-state.json');
+    let accountNow = Date.parse('2026-09-30T13:00:00Z');
+    let accountStep = 0;
+    const accountReader = async (knownVersions) => {
+        accountStep += 1;
+        if (accountStep === 1) {
+            return {
+                authenticated: true,
+                authStatus: 200,
+                listStatus: 200,
+                conversations: [
+                    { id: 'acct-1', version: 'v1|', updateTime: 'v1', asyncStatus: null },
+                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                ],
+                changed: { id: 'acct-2', version: 'v1|', detailStatus: 200, sawInProgress: false, completion: { messageId: 'old', text: 'Old answer', chars: 10 } }
+            };
+        }
+        if (accountStep === 2) {
+            assert.strictEqual(knownVersions['acct-1'], 'v1|');
+            return {
+                authenticated: true,
+                authStatus: 200,
+                listStatus: 200,
+                conversations: [
+                    { id: 'acct-1', version: 'v2|3', updateTime: 'v2', asyncStatus: 3 },
+                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                ],
+                changed: { id: 'acct-1', version: 'v2|3', detailStatus: 200, sawInProgress: true, completion: null }
+            };
+        }
+        if (accountStep === 3) {
+            assert.strictEqual(knownVersions['acct-1'], 'v2|3');
+            return {
+                authenticated: true,
+                authStatus: 200,
+                listStatus: 200,
+                conversations: [
+                    { id: 'acct-1', version: 'v3|', updateTime: 'v3', asyncStatus: null },
+                    { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+                ],
+                changed: {
+                    id: 'acct-1',
+                    version: 'v3|',
+                    detailStatus: 200,
+                    sawInProgress: false,
+                    completion: { messageId: 'msg-final', text: 'Finished answer', chars: 15, completedAt: 1790773200 }
+                }
+            };
+        }
+        return {
+            authenticated: true,
+            authStatus: 200,
+            listStatus: 200,
+            conversations: [
+                { id: 'acct-1', version: 'v3|', updateTime: 'v3', asyncStatus: null },
+                { id: 'acct-2', version: 'v1|', updateTime: 'v1', asyncStatus: null }
+            ],
+            changed: null
+        };
+    };
+    const accountWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: accountStatePath, conversationUrl: null },
+        accountReader,
+        now: () => accountNow
+    });
+    let accountResult = await accountWatcher.poll();
+    assert.strictEqual(accountResult.reason, 'account_baseline_recorded');
+    assert.strictEqual(accountResult.newResponse, false);
+    assert.strictEqual(accountWatcher.getPending().pending, null);
+    accountNow += 5000;
+    accountResult = await accountWatcher.poll();
+    assert.strictEqual(accountResult.reason, 'account_response_in_progress');
+    assert.strictEqual(accountResult.status, 'generating');
+    accountNow += 5000;
+    accountResult = await accountWatcher.poll();
+    assert.strictEqual(accountResult.reason, 'new_response');
+    assert.strictEqual(accountResult.newResponse, true);
+    const accountPending = accountWatcher.getPending().pending;
+    assert.strictEqual(accountPending.conversationId, 'acct-1');
+    assert.strictEqual(accountPending.text, 'Finished answer');
+    assert.strictEqual(accountWatcher.ack(accountPending.fingerprint).acked, true);
+    accountNow += 5000;
+    accountResult = await accountWatcher.poll();
+    assert.strictEqual(accountResult.reason, 'account_no_changes');
+    assert.strictEqual(accountWatcher.getPending().pending, null);
+
+    console.log('PASS chatgpt-web exact-once tab + account watcher behavior');
 })().catch(error => { console.error(error); process.exit(1); });
