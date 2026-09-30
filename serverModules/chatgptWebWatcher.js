@@ -163,6 +163,8 @@ function selectCdpTarget(targets, settings) {
         const exact = pages.find((target) => conversationIdFromUrl(target.url) === configuredId);
         if (exact) return exact;
     }
+    const conversationPages = pages.filter((target) => conversationIdFromUrl(target.url));
+    if (conversationPages.length) return conversationPages[conversationPages.length - 1];
     return pages[pages.length - 1] || null;
 }
 
