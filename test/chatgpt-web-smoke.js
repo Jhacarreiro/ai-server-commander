@@ -324,6 +324,103 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(accountResult.reason, 'attention_idle');
     assert.strictEqual(accountWatcher.getPending().pending, null);
 
+    // Regression: after a JIT allow, the sidebar may return to idle and never show unread.
+    // Follow only that approved conversation until its terminal assistant response appears.
+    const followPath = path.join(dir, 'attention-followup.json');
+    let followStep = 0;
+    let followNow = Date.parse('2026-09-30T14:00:00Z');
+    let followApprovals = 0;
+    const followConsent = { ...consent, conversationId: 'acct-follow', confirmMessageId: 'confirm-follow', targetMessageId: 'target-follow' };
+    const followReader = async (knownVersions, followUpConversationId) => {
+        followStep += 1;
+        if (followStep === 1) {
+            return {
+                authenticated: true, authStatus: 200, sourceAvailable: true,
+                conversations: [{ id: 'acct-follow', attentionState: 'idle', recencyAt: 1, route: '/g/g-x/c/acct-follow', latestAssistantTurnCreatedAt: null, version: 'idle|1' }],
+                changed: null
+            };
+        }
+        if (followStep === 2) {
+            assert.strictEqual(followUpConversationId, null);
+            return {
+                authenticated: true, authStatus: 200, sourceAvailable: true,
+                conversations: [{ id: 'acct-follow', attentionState: 'waiting', recencyAt: 2, route: '/g/g-x/c/acct-follow', latestAssistantTurnCreatedAt: null, version: 'waiting|2' }],
+                changed: { id: 'acct-follow', attentionState: 'waiting', recencyAt: 2, route: '/g/g-x/c/acct-follow', version: 'waiting|2', detailStatus: 200, consent: followConsent, completion: null, sawInProgress: true }
+            };
+        }
+        if (followStep === 3) {
+            assert.strictEqual(followUpConversationId, 'acct-follow');
+            return {
+                authenticated: true, authStatus: 200, sourceAvailable: true,
+                conversations: [{ id: 'acct-follow', attentionState: 'idle', recencyAt: 3, route: '/g/g-x/c/acct-follow', latestAssistantTurnCreatedAt: null, version: 'idle|3' }],
+                changed: { id: 'acct-follow', attentionState: 'idle', recencyAt: 3, route: '/g/g-x/c/acct-follow', version: 'idle|3', detailStatus: 200, consent: null, completion: null, sawInProgress: true, followUp: true }
+            };
+        }
+        assert.strictEqual(followUpConversationId, 'acct-follow');
+        return {
+            authenticated: true, authStatus: 200, sourceAvailable: true,
+            conversations: [{ id: 'acct-follow', attentionState: 'idle', recencyAt: 4, route: '/g/g-x/c/acct-follow', latestAssistantTurnCreatedAt: null, version: 'idle|4' }],
+            changed: {
+                id: 'acct-follow', attentionState: 'idle', recencyAt: 4, route: '/g/g-x/c/acct-follow', version: 'idle|4', detailStatus: 200,
+                consent: null, sawInProgress: false, followUp: true,
+                completion: { messageId: 'follow-final', text: 'Follow-up finished', chars: 18, completedAt: 1790776800 }
+            }
+        };
+    };
+    const followWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: followPath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: followReader,
+        consentApprover: async value => {
+            followApprovals += 1;
+            assert.deepStrictEqual(value, followConsent);
+            return { ok: true, status: 200, reason: 'allowed' };
+        },
+        now: () => followNow
+    });
+    assert.strictEqual((await followWatcher.poll()).reason, 'attention_baseline_recorded');
+    followNow += 5000;
+    assert.strictEqual((await followWatcher.poll()).reason, 'jit_consent_allowed');
+    assert.strictEqual(followApprovals, 1);
+    assert.strictEqual(readState(followPath).followUpConversationId, 'acct-follow');
+    followNow += 5000;
+    const followProgress = await followWatcher.poll();
+    assert.strictEqual(followProgress.reason, 'consent_followup_in_progress');
+    assert.strictEqual(followProgress.status, 'generating');
+    followNow += 5000;
+    const followDone = await followWatcher.poll();
+    assert.strictEqual(followDone.reason, 'new_response');
+    assert.strictEqual(followDone.newResponse, true);
+    assert.strictEqual(followWatcher.getPending().pending.text, 'Follow-up finished');
+    assert.strictEqual(readState(followPath).followUpConversationId, null);
+
+    // Recovery: a recent idle GPT conversation with no assistant turn gets one backend check.
+    const recoveryPath = path.join(dir, 'attention-recovery.json');
+    let recoveryStep = 0;
+    const recoveryWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: recoveryPath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: async (knownVersions, followUpConversationId) => {
+            recoveryStep += 1;
+            if (recoveryStep === 1) {
+                return { authenticated: true, authStatus: 200, sourceAvailable: true, conversations: [{ id: 'acct-r', attentionState: 'idle', recencyAt: 1, route: '/g/g-x/c/acct-r', latestAssistantTurnCreatedAt: null, version: 'idle|1' }], changed: null };
+            }
+            if (recoveryStep === 2) {
+                assert.strictEqual(followUpConversationId, null);
+                assert.strictEqual(knownVersions['acct-r'], 'idle|1');
+                return { authenticated: true, authStatus: 200, sourceAvailable: true, conversations: [{ id: 'acct-r', attentionState: 'idle', recencyAt: 2, route: '/g/g-x/c/acct-r', latestAssistantTurnCreatedAt: null, version: 'idle|2' }], changed: { id: 'acct-r', attentionState: 'idle', recencyAt: 2, route: '/g/g-x/c/acct-r', version: 'idle|2', recovery: true, detailStatus: 200, consent: null, completion: null, sawInProgress: true } };
+            }
+            assert.strictEqual(followUpConversationId, 'acct-r');
+            return { authenticated: true, authStatus: 200, sourceAvailable: true, conversations: [{ id: 'acct-r', attentionState: 'idle', recencyAt: 3, route: '/g/g-x/c/acct-r', latestAssistantTurnCreatedAt: null, version: 'idle|3' }], changed: { id: 'acct-r', attentionState: 'idle', recencyAt: 3, route: '/g/g-x/c/acct-r', version: 'idle|3', followUp: true, detailStatus: 200, consent: null, sawInProgress: false, completion: { messageId: 'r-final', text: 'Recovered response', chars: 18, completedAt: 1790776900 } } };
+        },
+        now: () => followNow
+    });
+    assert.strictEqual((await recoveryWatcher.poll()).reason, 'attention_baseline_recorded');
+    followNow += 5000;
+    assert.strictEqual((await recoveryWatcher.poll()).reason, 'consent_followup_in_progress');
+    assert.strictEqual(readState(recoveryPath).followUpConversationId, 'acct-r');
+    followNow += 5000;
+    assert.strictEqual((await recoveryWatcher.poll()).reason, 'new_response');
+    assert.strictEqual(recoveryWatcher.getPending().pending.text, 'Recovered response');
+
     const unmatchedPath = path.join(dir, 'attention-unmatched.json');
     let unmatchedStep = 0;
     const unmatchedWatcher = new ChatGPTWebWatcher({

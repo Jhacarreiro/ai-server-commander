@@ -103,6 +103,8 @@ function blankState() {
         ackedAt: null,
         accountPrimedAt: null,
         accountConversationVersions: {},
+        followUpConversationId: null,
+        followUpSince: null,
         lastError: null
     };
 }
@@ -332,16 +334,18 @@ function allowTargetMessageId(actions) {
     return target ? String(target) : null;
 }
 
-async function readAccountActivity(settings, knownVersions = {}) {
+async function readAccountActivity(settings, knownVersions = {}, followUpConversationId = null) {
     const targets = await fetchCdpTargets(settings);
     const target = selectCdpTarget(targets, settings);
     if (!target) throw new Error('No ChatGPT page is available on the configured CDP endpoint.');
     const page = await connectCdpSession(target.webSocketDebuggerUrl, 10000);
     try {
         const knownJson = JSON.stringify(knownVersions && typeof knownVersions === 'object' ? knownVersions : {});
+        const followUpJson = JSON.stringify(followUpConversationId || null);
         const approvalDomainJson = JSON.stringify(settings.approvalDomain || null);
         const expression = `(() => (async () => {
             const known = ${knownJson};
+            const followUpConversationId = ${followUpJson};
             const approvalDomain = ${approvalDomainJson};
             const anchor = document.querySelector('a[href*="/c/"]');
             const row = anchor && (anchor.closest('[role="group"].sidebar-item') || anchor.parentElement);
@@ -363,8 +367,12 @@ async function readAccountActivity(settings, knownVersions = {}) {
                 attentionState: String(item.attentionState || 'idle'),
                 recencyAt: Number(item.recencyAt || 0),
                 route: String(item.route || ''),
+                latestAssistantTurnCreatedAt: item.conversation?.latest_assistant_turn_created_at || null,
                 version: String(item.attentionState || 'idle') + '|' + String(item.recencyAt || 0)
             })).filter(item => item.id);
+            const followUp = followUpConversationId
+                ? conversations.find(item => item.id === followUpConversationId) || null
+                : null;
             const active = conversations
                 .filter(item => (item.attentionState === 'waiting' || item.attentionState === 'unread') && known[item.id] !== item.version)
                 .sort((a, b) => {
@@ -372,7 +380,16 @@ async function readAccountActivity(settings, knownVersions = {}) {
                     const bp = b.attentionState === 'waiting' ? 0 : 1;
                     return ap - bp || b.recencyAt - a.recencyAt;
                 });
-            const changedItem = active[0] || null;
+            const recovery = conversations
+                .filter(item => item.attentionState === 'idle'
+                    && item.route.startsWith('/g/')
+                    && !item.latestAssistantTurnCreatedAt
+                    && known[item.id]
+                    && known[item.id] !== item.version)
+                .sort((a, b) => b.recencyAt - a.recencyAt)[0] || null;
+            const changedItem = followUp
+                ? { ...followUp, followUp: true }
+                : (active[0] || (recovery ? { ...recovery, recovery: true } : null));
             if (!changedItem) return { authenticated: true, authStatus: 200, conversations, changed: null, sourceAvailable: true };
 
             const sessionResponse = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
@@ -391,12 +408,14 @@ async function readAccountActivity(settings, knownVersions = {}) {
             let nodeId = detail && detail.current_node;
             let completion = null;
             let consent = null;
+            let sawInProgress = false;
             let steps = 0;
             while (nodeId && mapping[nodeId] && steps < 512) {
                 const node = mapping[nodeId];
                 const message = node && node.message;
                 const fromServer = message?.metadata?.jit_plugin_data?.from_server;
-                if (!consent && changedItem.attentionState === 'waiting'
+                if (message?.status === 'in_progress') sawInProgress = true;
+                if (!consent && (changedItem.attentionState === 'waiting' || changedItem.recovery === true)
                     && fromServer?.type === 'confirm_action'
                     && approvalDomain
                     && String(fromServer?.body?.domain || '').toLowerCase() === approvalDomain
@@ -427,7 +446,7 @@ async function readAccountActivity(settings, knownVersions = {}) {
                         }
                     }
                 }
-                if (!completion && changedItem.attentionState === 'unread'
+                if (!completion && (changedItem.attentionState === 'unread' || changedItem.followUp === true)
                     && message && message.author && message.author.role === 'assistant'
                     && message.recipient === 'all'
                     && message.content && message.content.content_type === 'text'
@@ -452,7 +471,7 @@ async function readAccountActivity(settings, knownVersions = {}) {
                 authenticated: true,
                 authStatus: sessionResponse.status,
                 conversations,
-                changed: { ...changedItem, detailStatus: detailResponse.status, completion, consent },
+                changed: { ...changedItem, detailStatus: detailResponse.status, completion, consent, sawInProgress },
                 sourceAvailable: true
             };
         })())()`;
@@ -721,7 +740,7 @@ class ChatGPTWebWatcher {
     constructor({ settings, snapshotReader, accountReader, consentApprover, now } = {}) {
         this.settings = settings || resolveChatGPTWebConfig();
         this.snapshotReader = snapshotReader || (() => readSnapshot(this.settings));
-        this.accountReader = accountReader || ((knownVersions) => readAccountActivity(this.settings, knownVersions));
+        this.accountReader = accountReader || ((knownVersions, followUpConversationId) => readAccountActivity(this.settings, knownVersions, followUpConversationId));
         this.consentApprover = consentApprover || ((consent) => approveJitConsent(this.settings, consent));
         this.useAccountMode = !this.settings.conversationUrl && !snapshotReader;
         this.now = now || (() => Date.now());
@@ -767,7 +786,7 @@ class ChatGPTWebWatcher {
         if (state.pendingFingerprint) return { ...publicStatus(this.settings, state), newResponse: false };
 
         let activity;
-        try { activity = await this.accountReader(state.accountConversationVersions || {}); }
+        try { activity = await this.accountReader(state.accountConversationVersions || {}, state.followUpConversationId || null); }
         catch (error) {
             state = { ...state, status: 'error', reason: 'attention_snapshot_failed', updatedAt: nowIso, lastError: String(error?.message || error).slice(0, 500) };
             this.save(state);
@@ -800,7 +819,18 @@ class ChatGPTWebWatcher {
         }
 
         if (!activity.changed) {
-            state = { ...state, status: 'idle', reason: 'attention_idle', updatedAt: nowIso, accountConversationVersions: versions, lastError: null };
+            const followUpStillPresent = state.followUpConversationId
+                && conversations.some(item => item.id === state.followUpConversationId);
+            state = {
+                ...state,
+                status: 'idle',
+                reason: 'attention_idle',
+                updatedAt: nowIso,
+                accountConversationVersions: versions,
+                followUpConversationId: followUpStillPresent ? state.followUpConversationId : null,
+                followUpSince: followUpStillPresent ? state.followUpSince : null,
+                lastError: null
+            };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
@@ -814,7 +844,7 @@ class ChatGPTWebWatcher {
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
-        if (changed.attentionState === 'waiting') {
+        if (changed.attentionState === 'waiting' || (changed.recovery && changed.consent)) {
             if (!changed.consent) {
                 state = { ...state, status: 'needs_human', reason: 'attention_waiting_unmatched', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
                 this.save(state);
@@ -828,21 +858,42 @@ class ChatGPTWebWatcher {
                 this.save(state);
                 return { ...publicStatus(this.settings, state), newResponse: false, approval };
             }
-            state = { ...state, status: 'generating', reason: 'jit_consent_allowed', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
+            state = {
+                ...state,
+                status: 'generating',
+                reason: 'jit_consent_allowed',
+                updatedAt: nowIso,
+                currentConversationId: changed.id,
+                accountConversationVersions: versions,
+                followUpConversationId: changed.id,
+                followUpSince: nowIso,
+                lastError: null
+            };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false, approval };
         }
 
         const completion = changed.completion;
         if (!completion || !completion.text) {
-            state = { ...state, status: 'stabilizing', reason: 'unread_without_terminal_response', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastError: null };
+            const shouldFollow = changed.followUp === true || (changed.recovery === true && changed.sawInProgress === true);
+            state = {
+                ...state,
+                status: shouldFollow ? 'generating' : 'stabilizing',
+                reason: shouldFollow ? 'consent_followup_in_progress' : (changed.recovery ? 'consent_recovery_clear' : 'unread_without_terminal_response'),
+                updatedAt: nowIso,
+                currentConversationId: changed.id,
+                accountConversationVersions: versions,
+                followUpConversationId: shouldFollow ? changed.id : null,
+                followUpSince: shouldFollow ? (state.followUpSince || nowIso) : null,
+                lastError: null
+            };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
 
         const fp = fingerprint(changed.id, `${completion.messageId || ''}\0${completion.text}`);
         if (normalizeRecentFingerprints(state.recentFingerprints).includes(fp)) {
-            state = { ...state, status: 'completed', reason: 'response_seen_before', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastCompletedFingerprint: fp, lastCompletedAt: nowIso, recentFingerprints: rememberFingerprint(state, fp), lastError: null };
+            state = { ...state, status: 'completed', reason: 'response_seen_before', updatedAt: nowIso, currentConversationId: changed.id, accountConversationVersions: versions, lastCompletedFingerprint: fp, lastCompletedAt: nowIso, recentFingerprints: rememberFingerprint(state, fp), followUpConversationId: null, followUpSince: null, lastError: null };
             this.save(state);
             return { ...publicStatus(this.settings, state), newResponse: false };
         }
@@ -869,6 +920,8 @@ class ChatGPTWebWatcher {
             pendingFingerprint: fp,
             pendingSince: nowIso,
             ackedAt: null,
+            followUpConversationId: null,
+            followUpSince: null,
             lastError: null
         };
         this.save(state);
