@@ -276,7 +276,7 @@ async function readSnapshot(settings) {
                     authenticated = response.ok && body && typeof body === 'object' && Object.keys(body).length > 0;
                 }
             } catch {}
-            const nodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+            const nodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"], [data-chatgpt-search-unit-key$=":assistant"]'));
             const latest = nodes.length ? nodes[nodes.length - 1] : null;
             const assistantText = latest ? (latest.innerText || latest.textContent || '').trim() : '';
             const visible = el => {
