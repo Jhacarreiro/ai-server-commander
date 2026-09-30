@@ -468,6 +468,43 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(unmatchedResult.status, 'needs_human');
     assert.strictEqual(unmatchedResult.reason, 'attention_waiting_unmatched');
 
+    // Multiple attention changes must not be collapsed into one processed snapshot.
+    const multiPath = path.join(dir, 'attention-multi.json');
+    let multiStep = 0;
+    const multiConsent = { ...consent, conversationId: 'multi-a', confirmMessageId: 'multi-confirm', targetMessageId: 'multi-target' };
+    const multiWatcher = new ChatGPTWebWatcher({
+        settings: { ...settings, statePath: multiPath, conversationUrl: null, approvalDomain: 'terminal.example.com' },
+        accountReader: async () => {
+            multiStep += 1;
+            if (multiStep === 1) {
+                return {
+                    authenticated: true, authStatus: 200, sourceAvailable: true,
+                    conversations: [
+                        { id: 'multi-a', attentionState: 'idle', recencyAt: 1, route: '/g/g-x/c/multi-a', version: 'idle|1' },
+                        { id: 'multi-b', attentionState: 'idle', recencyAt: 1, route: '/g/g-x/c/multi-b', version: 'idle|1' }
+                    ],
+                    changed: null
+                };
+            }
+            return {
+                authenticated: true, authStatus: 200, sourceAvailable: true,
+                conversations: [
+                    { id: 'multi-a', attentionState: 'waiting', recencyAt: 2, route: '/g/g-x/c/multi-a', version: 'waiting|2' },
+                    { id: 'multi-b', attentionState: 'unread', recencyAt: 2, route: '/g/g-x/c/multi-b', version: 'unread|2' }
+                ],
+                changed: { id: 'multi-a', attentionState: 'waiting', recencyAt: 2, route: '/g/g-x/c/multi-a', version: 'waiting|2', detailStatus: 200, consent: multiConsent, completion: null, sawInProgress: true }
+            };
+        },
+        consentApprover: async () => ({ ok: true, status: 200, reason: 'allowed' }),
+        now: () => followNow
+    });
+    assert.strictEqual((await multiWatcher.poll()).reason, 'attention_baseline_recorded');
+    followNow += 5000;
+    assert.strictEqual((await multiWatcher.poll()).reason, 'jit_consent_allowed');
+    const multiState = readState(multiPath);
+    assert.strictEqual(multiState.accountConversationVersions['multi-a'], 'waiting|2');
+    assert.strictEqual(multiState.accountConversationVersions['multi-b'], 'idle|1');
+
     assert.strictEqual(nextPollDelay({ settings: { pollMs: 5000 } }, null), 5000);
 
     console.log('PASS chatgpt-web exact-once tab + account watcher behavior');
