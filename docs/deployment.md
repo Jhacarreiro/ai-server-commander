@@ -181,28 +181,28 @@ the real file or directory still lives inside a release scheduled for deletion.
 
 Keep configuration and runtime data in a persistent directory such as
 `/opt/ai-server-commander-state`, owned by the service user. Keep `config.json`
-private (mode `600`). For each new release, run this Linux/GNU example as that user,
-adjusting the paths first:
+private (mode `600`). For each new release, run the Linux/GNU helper as that user,
+adjusting the paths first. Its release directory must belong to a parent directory
+reserved for releases, such as `/opt/releases`:
 
 ```bash
-(
-    set -eu
-    release=$(readlink -e -- /opt/releases/ai-server-commander-NEW)
-    config=$(readlink -e -- /opt/ai-server-commander-state/config.json)
-    runtime=$(readlink -e -- /opt/ai-server-commander-state/runtime)
-    test -d "$release"
-    test -f "$config"
-    test -d "$runtime"
-
-    # Both destinations must be absent: never replace real state here.
-    test ! -e "$release/config.json" && test ! -L "$release/config.json"
-    test ! -e "$release/runtime" && test ! -L "$release/runtime"
-    ln -s -- "$config" "$release/config.json"
-    ln -s -- "$runtime" "$release/runtime"
-    test "$(readlink -- "$release/config.json")" = "$config"
-    test "$(readlink -- "$release/runtime")" = "$runtime"
-)
+bash scripts/link-release-state.sh \
+    /opt/releases/ai-server-commander-NEW \
+    /opt/ai-server-commander-state/config.json \
+    /opt/ai-server-commander-state/runtime
 ```
+
+The helper resolves both source paths, rejects state inside the directory
+containing releases, and atomically replaces existing symlinks or creates new
+ones. It validates both destinations first and refuses to replace a real file or
+directory. It can be run again with the same persistent paths.
+
+If deployments copy a local startup wrapper from the previous release, install a
+copy of this helper outside the release tree and call it from that wrapper before
+starting Node, passing the current release and the fixed persistent state paths.
+This also repairs inherited symlink chains on future starts. Ensure the service
+user can update the two release symlinks, and keep the helper installed when
+cleaning old releases. Run deployments and wrapper updates serially.
 
 For an existing deployment, resolve and record both destinations with
 `readlink -e` before changing anything. If the configuration is inside an old
@@ -211,11 +211,10 @@ ownership, restricting permissions, and verifying its contents before repointing
 the link. If runtime data is inside a release, stop its writers during migration;
 do not move a live runtime directory while processes are using it.
 
-To flatten an existing chain whose final targets are already persistent, create
-temporary symlinks in the current release and rename each over its existing
-symlink with `mv -Tf`. Verify that each entry being replaced is a symlink first.
-This atomically replaces each link without a missing-path interval. Repointing to
-the same final file and directory does not itself require a service restart.
+To flatten an existing chain whose final targets are already persistent, run the
+helper against the current release with those fixed targets. Its `mv -Tf`
+replacements avoid a missing-path interval. Repointing to the same final file and
+directory does not itself require a service restart.
 
 Before removing old releases or backup links, inspect the resolved targets of the
 current release, any retained rollback release, and the service's state paths.
