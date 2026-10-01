@@ -30,11 +30,37 @@ function response() {
         for (const flag of ['on', 'yes', '1', true]) {
             assert.strictEqual(resolveChatGPTWebConfig({ chatgptWeb: { enabled: flag } }, {}).enabled, true);
         }
-        assert.throws(() => resolveChatGPTWebConfig({ chatgptWeb: { enabled: 'flase' } }, {}), /must be true or false/);
-        assert.throws(() => resolveChatGPTWebConfig({ chatgptWeb: { enabled: null } }, {}), /must be true or false/);
-        assert.throws(() => resolveChatGPTWebConfig({}, { CHATGPT_WEB_ENABLED: '' }), /must be true or false/);
-        assert.throws(() => resolveChatGPTWebConfig({}, { CHATGPT_WEB_ENABLED: 'invalid' }), /must be true or false/);
-        assert.throws(() => resolveChatGPTWebConfig({ chatgptWeb: true }, {}), /configuration object/);
+        // Invalid settings disable the watcher (fail closed) instead of stopping Commander.
+        const invalid = [
+            [{ chatgptWeb: { enabled: 'flase' } }, {}, /must be true or false/],
+            [{ chatgptWeb: { enabled: null } }, {}, /must be true or false/],
+            [{ chatgptWeb: { enabled: true } }, { CHATGPT_WEB_ENABLED: '' }, /must be true or false/],
+            [{}, { CHATGPT_WEB_ENABLED: 'invalid' }, /must be true or false/],
+            [{ chatgptWeb: true }, {}, /configuration object/],
+            [{ chatgptWeb: { enabled: true, cdpEndpoint: 'http://192.0.2.1:9223' } }, {}, /loopback/]
+        ];
+        for (const [config, env, message] of invalid) {
+            const resolved = resolveChatGPTWebConfig(config, env);
+            assert.strictEqual(resolved.enabled, false, JSON.stringify({ config, env }));
+            assert.match(resolved.configError, message);
+        }
+        // A null section is treated as absent, not as a TypeError.
+        assert.deepStrictEqual(
+            [resolveChatGPTWebConfig({ chatgptWeb: null }, {}).enabled, resolveChatGPTWebConfig({ chatgptWeb: null }, {}).configError],
+            [false, null]);
+        assert.strictEqual(resolveChatGPTWebConfig({ chatgptWeb: { enabled: true } }, {}).configError, null);
+
+        // The routes report the configuration error with the usual 503.
+        const misconfigured = createChatGPTWebHandlers({ chatgptWeb: { enabled: 'flase' } });
+        const statusRes = response();
+        await misconfigured.statusHandler({}, statusRes);
+        assert.strictEqual(statusRes.statusCode, 503);
+        assert.strictEqual(statusRes.body.enabled, false);
+        assert.strictEqual(statusRes.body.reason, 'invalid_configuration');
+        assert.match(statusRes.body.lastError, /must be true or false/);
+        const pollRes = response();
+        await misconfigured.pollHandler({}, pollRes);
+        assert.strictEqual(pollRes.statusCode, 503);
 
         const now = Date.parse('2026-10-01T13:00:00Z');
         const iso = new Date(now).toISOString();

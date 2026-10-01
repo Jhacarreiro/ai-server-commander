@@ -14,7 +14,7 @@ Edit the private Commander `config.json`:
 }
 ```
 
-Use `true` to enable it. Restart the process that runs Commander after changing the flag. For example:
+Use `true` to enable it (`1`, `yes` and `on` also work; `0`, `no` and `off` disable it). Any other value, including an empty `CHATGPT_WEB_ENABLED=`, keeps the watcher disabled: Commander still starts, logs the error, and the watcher routes return `503` with `reason: "invalid_configuration"`. The same applies to an invalid CDP endpoint or conversation URL. Restart the process that runs Commander after changing the flag. For example:
 
 ```bash
 sudo systemctl restart ai-server-commander.service
