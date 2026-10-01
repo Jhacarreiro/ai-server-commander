@@ -1,4 +1,4 @@
-const { ChatGPTWebWatcher, resolveChatGPTWebConfig } = require('../serverModules/chatgptWebWatcher');
+const { ChatGPTWebWatcher, disabledReason, resolveChatGPTWebConfig } = require('../serverModules/chatgptWebWatcher');
 
 let singleton = null;
 let singletonKey = null;
@@ -12,6 +12,7 @@ function watcherFor(config) {
         pollTimer = null;
         singleton = new ChatGPTWebWatcher({ settings });
         singletonKey = key;
+        if (settings.configError) console.error('ChatGPT Web watcher disabled by invalid configuration:', settings.configError);
     }
     ensureBackgroundPolling(singleton);
     return singleton;
@@ -51,7 +52,8 @@ function ensureBackgroundPolling(watcher) {
 
 function disabled(res, watcher) {
     if (watcher.settings.enabled) return false;
-    res.status(503).json({ enabled: false, status: 'disabled', reason: 'disabled' });
+    const { configError } = watcher.settings;
+    res.status(503).json({ enabled: false, status: 'disabled', reason: disabledReason(watcher.settings), ...(configError ? { lastError: configError } : {}) });
     return true;
 }
 
@@ -86,7 +88,7 @@ function disabled(res, watcher) {
  *       '200': { description: Pending response acknowledged }
  *       '400': { description: Fingerprint required }
  *       '409': { description: Fingerprint mismatch or nothing pending }
- *       '503': { description: Watcher disabled or persisted state unavailable }
+ *       '503': { description: Watcher disabled (also by invalid configuration) or persisted state unavailable }
  * /api/chatgpt-web/poll:
  *   post:
  *     operationId: pollChatGPTWeb

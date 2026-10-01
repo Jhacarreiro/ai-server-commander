@@ -64,12 +64,18 @@ function conversationUrl(value) {
     return parsed.toString();
 }
 
-function resolveChatGPTWebConfig(config = {}, env = process.env) {
-    if (config.chatgptWeb != null && (typeof config.chatgptWeb !== 'object' || Array.isArray(config.chatgptWeb))) {
+function resolveStatePath(value) {
+    const raw = String(value ?? DEFAULT_STATE_PATH);
+    return path.isAbsolute(raw) ? raw : path.resolve(PROJECT_ROOT, raw);
+}
+
+function strictChatGPTWebConfig(config, env) {
+    // A null section counts as absent, like a missing one.
+    const section = config ? config.chatgptWeb : null;
+    if (section != null && (typeof section !== 'object' || Array.isArray(section))) {
         throw new Error('chatgptWeb must be a configuration object with an enabled flag.');
     }
-    const local = config && typeof config.chatgptWeb === 'object' && !Array.isArray(config.chatgptWeb) ? config.chatgptWeb : {};
-    const stateRaw = env.CHATGPT_WEB_STATE_PATH ?? local.statePath ?? DEFAULT_STATE_PATH;
+    const local = section || {};
     return {
         enabled: bool(env.CHATGPT_WEB_ENABLED ?? local.enabled, false, 'chatgptWeb.enabled / CHATGPT_WEB_ENABLED'),
         cdpEndpoint: cdpEndpoint(env.CHATGPT_WEB_CDP_ENDPOINT ?? local.cdpEndpoint),
@@ -77,10 +83,33 @@ function resolveChatGPTWebConfig(config = {}, env = process.env) {
         stableMs: int(env.CHATGPT_WEB_STABLE_MS ?? local.stableMs, 4000),
         primeMs: int(env.CHATGPT_WEB_PRIME_MS ?? local.primeMs, 20000),
         pollMs: int(env.CHATGPT_WEB_POLL_MS ?? local.pollMs, 5000),
-        statePath: path.isAbsolute(String(stateRaw)) ? String(stateRaw) : path.resolve(PROJECT_ROOT, String(stateRaw)),
+        statePath: resolveStatePath(env.CHATGPT_WEB_STATE_PATH ?? local.statePath),
         emitInitial: bool(env.CHATGPT_WEB_EMIT_INITIAL ?? local.emitInitial, false),
-        approvalDomain: approvalDomain(config, env)
+        approvalDomain: approvalDomain(config, env),
+        configError: null
     };
+}
+
+// The watcher is optional, so an invalid setting disables it (fail closed)
+// instead of stopping Commander: REST, MCP and OAuth keep working, and the
+// error is reported in the log and by the watcher routes.
+function resolveChatGPTWebConfig(config = {}, env = process.env) {
+    try {
+        return strictChatGPTWebConfig(config, env);
+    } catch (error) {
+        return {
+            enabled: false,
+            cdpEndpoint: null,
+            conversationUrl: null,
+            stableMs: 4000,
+            primeMs: 20000,
+            pollMs: 5000,
+            statePath: resolveStatePath(null),
+            emitInitial: false,
+            approvalDomain: null,
+            configError: error.message
+        };
+    }
 }
 
 function fingerprint(conversationId, text) {
@@ -197,7 +226,7 @@ function publicStatus(settings, state) {
     return {
         enabled: settings.enabled,
         status: settings.enabled ? state.status : 'disabled',
-        reason: settings.enabled ? state.reason : 'disabled',
+        reason: settings.enabled ? state.reason : disabledReason(settings),
         updatedAt: state.updatedAt,
         currentConversationId: state.currentConversationId,
         configuredConversationId: conversationIdFromUrl(settings.conversationUrl),
@@ -212,8 +241,12 @@ function publicStatus(settings, state) {
             completedAt: state.latest.completedAt,
             pending: state.pendingFingerprint === state.latest.fingerprint
         } : null,
-        lastError: state.lastError
+        lastError: settings.configError || state.lastError
     };
+}
+
+function disabledReason(settings) {
+    return settings.configError ? 'invalid_configuration' : 'disabled';
 }
 
 function selectCdpTarget(targets, settings) {
@@ -1153,4 +1186,4 @@ class ChatGPTWebWatcher {
 
 }
 
-module.exports = { ChatGPTWebWatcher, allowTargetMessageId, approveJitConsent, buildJitAllowPayload, conversationIdFromUrl, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
+module.exports = { ChatGPTWebWatcher, allowTargetMessageId, approveJitConsent, buildJitAllowPayload, conversationIdFromUrl, disabledReason, fingerprint, readAccountActivity, readSnapshot, readState, resolveChatGPTWebConfig, selectCdpTarget, writeStateAtomic };
