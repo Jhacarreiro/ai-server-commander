@@ -13,6 +13,19 @@ It exposes the same execution core through two primary client adapters:
 
 The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.2.0 the production capability is the bounded host command executor.
 
+## Connect your assistant
+
+Start with [Connecting OpenAI and Claude](./docs/client-setup.md), which covers the URL, authentication and first test for each client.
+
+| Client | Connection | URL to enter |
+|---|---|---|
+| ChatGPT Custom GPT | Action with Bearer API-key authentication | `https://commander.example.com/openapi.json` |
+| ChatGPT custom MCP connection | Remote MCP with OAuth | `https://commander.example.com/mcp` |
+| Claude web / Desktop | Custom remote connector with OAuth | `https://commander.example.com/mcp` |
+| Claude Code | HTTP MCP server with OAuth | `https://commander.example.com/mcp` |
+
+Replace the example hostname with your server's public HTTPS origin. The browser watcher is optional: all four connections work with it disabled. See [watcher on/off and browser recovery](./docs/watcher-operations.md) for the separate browser lifecycle integration.
+
 The longer-term direction is broader than terminal access: Commander should remain a small, auditable control plane that can expose typed capabilities such as read-only filesystem operations, remote-host adapters and browser/session automation while keeping authentication, policy, activity state and client transports at clear boundaries. A future mobile or chat UI should consume these capabilities rather than become a dependency of the core server.
 
 > [!CAUTION]
@@ -202,6 +215,8 @@ Custom GPT Actions use the REST/OpenAPI adapter and remain the most broadly comp
 6. Add or adapt [prompt.md](./prompt.md) as the GPT instructions.
 7. Test first with a read-only command such as `pwd && hostname`.
 
+For the full walkthrough and OAuth-based ChatGPT/Claude connections, use [the client setup guide](./docs/client-setup.md).
+
 Legacy GET request:
 
 ```http
@@ -227,6 +242,8 @@ Content-Type: application/json
 ```
 
 ## Remote MCP clients
+
+For Claude web/Desktop, Claude Code and ChatGPT, start with [the client setup guide](./docs/client-setup.md). It explains adding the connection and completing Commander authorization.
 
 The remote MCP endpoint is:
 
@@ -506,11 +523,14 @@ The unauthenticated `/mcp` request should return `401` with a `WWW-Authenticate`
 
 ## Documentation
 
+- [Connecting OpenAI and Claude](./docs/client-setup.md)
+- [Watcher on/off and browser recovery](./docs/watcher-operations.md)
+- [ChatGPT Web watcher API and persistence](./docs/chatgpt-web-mvp1.md)
 - [Architecture](./docs/architecture.md)
 - [Deployment and upgrades](./docs/deployment.md)
 - [Changelog](./CHANGELOG.md)
 - [Roadmap](./ROADMAP.md)
-- [Custom GPT instruction starter](./prompt.md)
+- [Assistant instruction starter (ChatGPT / Claude)](./prompt.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security policy](./SECURITY.md)
 - [Support](./SUPPORT.md)

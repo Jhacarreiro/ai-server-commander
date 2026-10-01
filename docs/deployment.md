@@ -14,6 +14,8 @@ AI Server Commander as an unprivileged systemd service
 
 Do not expose the Node process directly to the public internet without TLS and access controls.
 
+After deployment, follow [Connecting OpenAI and Claude](./client-setup.md). For the optional ChatGPT browser watcher and a deployment-level supervisor that starts/stops its browser with the effective watcher flag, see [watcher operations](./watcher-operations.md). That lifecycle integration is separate from this base service installation.
+
 ## Dedicated user
 
 Example for Linux:
