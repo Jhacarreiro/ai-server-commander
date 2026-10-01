@@ -164,12 +164,62 @@ Suggested process:
 
 1. Download or clone the new tagged release into a new directory.
 2. Run `npm ci --omit=dev`.
-3. Link the existing `config.json` and `runtime/` state, and preserve the same `OAUTH_STATE_PATH`.
+3. Link `config.json` and `runtime/` directly to their resolved, persistent paths outside the release directories (see below), and preserve the same `OAUTH_STATE_PATH`.
 4. Run `npm run check` and `npm test` before cutover.
 5. Start a staging instance on another port.
 6. Validate REST, MCP, OAuth metadata and OpenAPI.
 7. Switch the stable symlink and restart the service.
 8. Keep the previous release intact until the new release has run cleanly.
+
+### Link persistent state without release chains
+
+Never link a new release's state to `current/config.json`, `current/runtime`, or
+the corresponding paths inside the previous release. That makes the new release
+depend on older releases and can eventually exceed the operating system's symlink
+resolution limit. Resolving a source path is necessary, but is not sufficient if
+the real file or directory still lives inside a release scheduled for deletion.
+
+Keep configuration and runtime data in a persistent directory such as
+`/opt/ai-server-commander-state`, owned by the service user. Keep `config.json`
+private (mode `600`). For each new release, run the Linux/GNU helper as that user,
+adjusting the paths first. Its release directory must belong to a parent directory
+reserved for releases, such as `/opt/releases`:
+
+```bash
+bash scripts/link-release-state.sh \
+    /opt/releases/ai-server-commander-NEW \
+    /opt/ai-server-commander-state/config.json \
+    /opt/ai-server-commander-state/runtime
+```
+
+The helper resolves both source paths, rejects state inside the directory
+containing releases, and atomically replaces existing symlinks or creates new
+ones. It validates both destinations first and refuses to replace a real file or
+directory. It can be run again with the same persistent paths.
+
+If deployments copy a local startup wrapper from the previous release, install a
+copy of this helper outside the release tree and call it from that wrapper before
+starting Node, passing the current release and the fixed persistent state paths.
+This also repairs inherited symlink chains on future starts. Ensure the service
+user can update the two release symlinks, and keep the helper installed when
+cleaning old releases. Run deployments and wrapper updates serially.
+
+For an existing deployment, resolve and record both destinations with
+`readlink -e` before changing anything. If the configuration is inside an old
+release, back it up securely and copy it to the persistent location, preserving
+ownership, restricting permissions, and verifying its contents before repointing
+the link. If runtime data is inside a release, stop its writers during migration;
+do not move a live runtime directory while processes are using it.
+
+To flatten an existing chain whose final targets are already persistent, run the
+helper against the current release with those fixed targets. Its `mv -Tf`
+replacements avoid a missing-path interval. Repointing to the same final file and
+directory does not itself require a service restart.
+
+Before removing old releases or backup links, inspect the resolved targets of the
+current release, any retained rollback release, and the service's state paths.
+All persistent data must survive the removal. Preserve a validated rollback
+release, and check service health and state resolution again after cleanup.
 
 ## Rollback
 
