@@ -106,10 +106,10 @@ const snap = (overrides = {}) => ({
     assert.strictEqual(r.reason, 'response_seen_before');
     assert.strictEqual(r.newResponse, false);
     assert.strictEqual(restarted.getPending().pending.text, 'Answer B complete');
-    const wrongAck = restarted.ack('wrong');
+    const wrongAck = await restarted.ack('wrong');
     assert.strictEqual(wrongAck.acked, false);
     assert.strictEqual(wrongAck.reason, 'fingerprint_mismatch');
-    const goodAck = restarted.ack(firstPending.fingerprint);
+    const goodAck = await restarted.ack(firstPending.fingerprint);
     assert.strictEqual(goodAck.acked, true);
     assert.strictEqual(restarted.getPending().pending, null);
 
@@ -318,7 +318,7 @@ const snap = (overrides = {}) => ({
     const accountPending = accountWatcher.getPending().pending;
     assert.strictEqual(accountPending.conversationId, 'acct-1');
     assert.strictEqual(accountPending.text, 'Finished answer');
-    assert.strictEqual(accountWatcher.ack(accountPending.fingerprint).acked, true);
+    assert.strictEqual((await accountWatcher.ack(accountPending.fingerprint)).acked, true);
     accountNow += 5000;
     accountResult = await accountWatcher.poll();
     assert.strictEqual(accountResult.reason, 'attention_idle');

@@ -1,27 +1,33 @@
-# ChatGPT Web watcher — MVP1
+# ChatGPT Web watcher
 
-MVP1 adds a read-only, disabled-by-default browser/session capability to AI Server Commander. It observes one ChatGPT Web conversation through an already-authenticated Chromium session and reports deterministic state. It does not send messages, click buttons, handle credentials, or make account changes.
+The optional watcher attaches to an already-authenticated Chromium session over loopback CDP. It reports conversation state and completed assistant responses through authenticated REST routes. It is disabled by default and does not own browser credentials or submit user replies.
 
-## Boundary
+## Enable or disable
 
-```text
-ChatGPT Web
-    │ authenticated Chromium session
-    │ loopback CDP
-    ▼
-OpenCLI CDPBridge
-    ▼
-AI Server Commander
-    ├── status
-    ├── latest completed response
-    └── explicit poll + durable dedup
+Set the flag in `config.json` and restart the Commander process:
+
+```json
+{
+  "chatgptWeb": {
+    "enabled": true
+  }
+}
 ```
 
-Commander owns observation state, stability checks and deduplication. A consuming agent or UI owns summarization, reply suggestions and notifications.
+Use `"enabled": false` to disable it. The setup wizard writes this disabled flag for new installations. The remaining settings are optional and use the defaults below.
 
-## Configuration
+`CHATGPT_WEB_ENABLED` takes precedence over the file, including an explicit `false`. For example, on a POSIX host:
 
-The feature is disabled unless `chatgptWeb.enabled` or `CHATGPT_WEB_ENABLED` is true.
+```sh
+CHATGPT_WEB_ENABLED=false npm start
+CHATGPT_WEB_ENABLED=true npm start
+```
+
+Boolean values and `true/false`, `1/0`, `yes/no`, `on/off` are accepted. Invalid values stop startup with a configuration error. Omission defaults to disabled. `.env.example` is a reference; Commander does not load `.env` files automatically. In a service deployment, change the service environment or the persistent `config.json`, then restart that service. Editing the file alone does not change a running process.
+
+While disabled, no browser observation or consent approval runs, no watcher state is read or written, and all watcher routes return HTTP 503 with `status: disabled`. Existing pending responses and deduplication history stay on disk and are reused when enabled again. REST terminal execution and MCP remain available.
+
+## Settings and modes
 
 ```json
 {
@@ -38,44 +44,39 @@ The feature is disabled unless `chatgptWeb.enabled` or `CHATGPT_WEB_ENABLED` is 
 }
 ```
 
-Environment variables with matching names are also accepted: `CHATGPT_WEB_ENABLED`, `CHATGPT_WEB_CDP_ENDPOINT`, `CHATGPT_WEB_CONVERSATION_URL`, `CHATGPT_WEB_STABLE_MS`, `CHATGPT_WEB_PRIME_MS`, `CHATGPT_WEB_POLL_MS`, `CHATGPT_WEB_STATE_PATH`, and `CHATGPT_WEB_EMIT_INITIAL`.
+Environment overrides are `CHATGPT_WEB_ENABLED`, `CHATGPT_WEB_CDP_ENDPOINT`, `CHATGPT_WEB_CONVERSATION_URL`, `CHATGPT_WEB_STABLE_MS`, `CHATGPT_WEB_PRIME_MS`, `CHATGPT_WEB_POLL_MS`, `CHATGPT_WEB_STATE_PATH`, and `CHATGPT_WEB_EMIT_INITIAL`.
 
-MVP1 restricts CDP to a loopback host. `conversationUrl`, when configured, must be an HTTPS `chatgpt.com` URL containing `/c/<conversation-id>`.
+- **Attention mode** (`conversationUrl: null`): reads the account's sidebar attention index, records an initial baseline, and processes changed conversations individually. Waiting conversations can trigger the allowlisted consent action below. Unread or followed-up conversations provide completed assistant responses. A pending response must be acknowledged before further account processing.
+- **Conversation mode** (a configured HTTPS `chatgpt.com` URL containing `/c/<conversation-id>`): observes that conversation's DOM and generation state. Existing content is primed for `primeMs` and must stabilize for `stableMs`; baseline content is recorded without a new-response notification. This mode does not approve consent.
+
+CDP is restricted to loopback hosts. The watcher uses the existing session and does not launch a browser or navigate to another conversation.
+
+## Automatic consent in attention mode
+
+Attention mode can send a one-time JIT allow response for `runTerminalScript` when the consent domain matches `productionDomain`'s hostname. `CHATGPT_WEB_APPROVAL_DOMAIN` can override that hostname. Without an approval domain, no consent is approved. The allow payload uses `remember_answer: false`.
+
+This is a browser write action and can resume terminal execution requested by the ChatGPT conversation. It runs during both automatic and explicit polls. Unmatched waiting state requires human attention; other domains and operations are rejected by the consent approver. Setting `enabled: false` disables this action along with observation.
 
 ## REST operations
 
-All routes use the normal Commander bearer authentication boundary.
+All routes use normal Commander bearer authentication.
 
-- `GET /api/chatgpt-web/status` — state and metadata only; does not return response text.
-- `GET /api/chatgpt-web/latest` — latest completed assistant response, if any.
-- `GET /api/chatgpt-web/pending` — unacknowledged completed response, if any.
-- `POST /api/chatgpt-web/ack` — acknowledges a specific pending fingerprint after a downstream client has handled it.
-- `POST /api/chatgpt-web/poll` — performs one deterministic read-only observation.
+- `GET /api/chatgpt-web/status`: state and metadata, without response text.
+- `GET /api/chatgpt-web/latest`: latest completed assistant response, if any.
+- `GET /api/chatgpt-web/pending`: unacknowledged completed response, if any.
+- `POST /api/chatgpt-web/ack`: acknowledge the exact pending fingerprint after downstream handling. Returns 400 for a missing fingerprint, 409 for a mismatch or no pending response, and 503 when persisted state cannot be read safely.
+- `POST /api/chatgpt-web/poll`: perform one observation and, in attention mode, eligible consent handling.
 
-When enabled, Commander also polls automatically every `pollMs`; the explicit poll route remains useful for bounded diagnostics.
+Commander polls automatically every `pollMs`. Background polls, explicit polls, and ACKs share one mutation queue per watcher instance. Internal JavaScript callers must now `await watcher.ack(fingerprint)`; the HTTP request/response contract is unchanged.
 
-When disabled, these routes return HTTP 503 with `status: disabled`.
+States include `idle`, `generating`, `stabilizing`, `completed`, `needs_human`, and `error`. Authentication is checked against the ChatGPT session endpoint rather than visible login buttons.
 
-## State model
+## Persistence and recovery
 
-MVP1 uses these states:
+State is written atomically with mode `0600` to `statePath`. Keep it outside disposable releases, and exclude it, browser profiles, cookies, tokens, and conversation data from Git. The recent-history ring retains up to 64 fingerprints; an already recorded fingerprint in that ring does not emit another `newResponse: true`. Pending responses and ACKs survive restarts.
 
-- `idle` — authenticated but no selected conversation/assistant response is currently observable;
-- `generating` — ChatGPT exposes a visible stop-generation control;
-- `stabilizing` — assistant text is present but has not remained unchanged for `stableMs`;
-- `completed` — a stable response has been recorded;
-- `needs_human` — authentication is missing or a configured conversation is not open;
-- `error` — the browser/CDP snapshot failed.
+A missing state file initializes a first run. Invalid JSON, an invalid state structure, or a file read error stops polling and consent actions with `status: error` and reason `state_invalid` or `state_unreadable`. Status/latest/pending report the fault; explicit poll returns it with `newResponse: false`, and ACK returns HTTP 503. The faulty file is preserved unchanged, and error responses do not include its contents.
 
-When a conversation is opened or changed, the watcher primes it for `primeMs` (20 seconds by default) and records the first stable assistant response as that conversation's baseline instead of notifying old content. Stable fingerprints are retained in a bounded recent-history ring, so DOM lazy-load oscillations such as `A → B → A` cannot re-emit a fingerprint already observed. A genuinely new stable fingerprint returns `newResponse: true` exactly once and remains available through `/pending` until a downstream client acknowledges that exact fingerprint. Pending and dedup state survive Commander restarts. State is written atomically with mode `0600` under `runtime/`, which is excluded from Git.
+To recover, stop the watcher, keep a private copy of the faulty file, and restore a valid backup with its deduplication history and pending response intact. Correct file permissions for an unreadable file. Enable/restart the watcher afterwards. Deleting the state starts a fresh baseline and loses retained deduplication and ACK history.
 
-## Safety rules
-
-- No browser profile, cookie, token, credential, private conversation or runtime state belongs in the repository.
-- MVP1 never submits a message or automatically navigates to another conversation.
-- Authentication is checked against the ChatGPT session endpoint, not against visible “Log in” buttons, because authenticated pages may still render those controls.
-- Browser/CDP failures do not trigger autonomous recovery actions.
-
-## Intended client path
-
-The first intended client is a separate OpenClaw relay agent/bot that can poll Commander, notify a human when `newResponse` is true, summarize the response and suggest a reply. Telegram-specific behavior remains outside Commander. A later PWA can consume the same REST contract.
+Use one Commander process per state file. The in-process queue does not coordinate multiple Commander instances. Browser failures do not trigger browser restarts, login attempts, or unrelated account changes. Summaries, reply suggestions, and notifications remain client responsibilities.

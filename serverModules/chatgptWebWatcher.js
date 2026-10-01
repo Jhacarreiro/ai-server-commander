@@ -6,12 +6,14 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const DEFAULT_STATE_PATH = path.join(PROJECT_ROOT, 'runtime', 'chatgpt-web-state.json');
 const MAX_RECENT_FINGERPRINTS = 64;
 
-function bool(value, fallback = false) {
-    if (value == null || value === '') return fallback;
+function bool(value, fallback = false, settingName) {
+    if (value === undefined) return fallback;
+    if (!settingName && (value == null || value === '')) return fallback;
     if (typeof value === 'boolean') return value;
     const v = String(value).trim().toLowerCase();
     if (['1', 'true', 'yes', 'on'].includes(v)) return true;
     if (['0', 'false', 'no', 'off'].includes(v)) return false;
+    if (settingName) throw new Error(`${settingName} must be true or false (also accepts 1/0, yes/no, on/off).`);
     return fallback;
 }
 
@@ -63,10 +65,13 @@ function conversationUrl(value) {
 }
 
 function resolveChatGPTWebConfig(config = {}, env = process.env) {
+    if (config.chatgptWeb != null && (typeof config.chatgptWeb !== 'object' || Array.isArray(config.chatgptWeb))) {
+        throw new Error('chatgptWeb must be a configuration object with an enabled flag.');
+    }
     const local = config && typeof config.chatgptWeb === 'object' && !Array.isArray(config.chatgptWeb) ? config.chatgptWeb : {};
     const stateRaw = env.CHATGPT_WEB_STATE_PATH ?? local.statePath ?? DEFAULT_STATE_PATH;
     return {
-        enabled: bool(env.CHATGPT_WEB_ENABLED ?? local.enabled, false),
+        enabled: bool(env.CHATGPT_WEB_ENABLED ?? local.enabled, false, 'chatgptWeb.enabled / CHATGPT_WEB_ENABLED'),
         cdpEndpoint: cdpEndpoint(env.CHATGPT_WEB_CDP_ENDPOINT ?? local.cdpEndpoint),
         conversationUrl: conversationUrl(env.CHATGPT_WEB_CONVERSATION_URL ?? local.conversationUrl),
         stableMs: int(env.CHATGPT_WEB_STABLE_MS ?? local.stableMs, 4000),
@@ -126,16 +131,57 @@ function rememberFingerprint(state, fp) {
     return normalizeRecentFingerprints([...(state.recentFingerprints || []), fp]);
 }
 
+class WatcherStateError extends Error {
+    constructor(reason, message) {
+        super(message);
+        this.name = 'WatcherStateError';
+        this.reason = reason;
+    }
+}
+
+function validateState(value) {
+    const invalid = () => { throw new WatcherStateError('state_invalid', 'Watcher state is invalid; restore a valid backup before polling.'); };
+    const object = (item) => item && typeof item === 'object' && !Array.isArray(item);
+    const optionalString = (item) => item == null || (typeof item === 'string' && item.trim().length > 0);
+    if (!object(value) || ![1, 2, 3].includes(value.version)) invalid();
+    // Older versions did not have the account index or fingerprint history.
+    if (value.version === 3 && (!Array.isArray(value.recentFingerprints) || !object(value.accountConversationVersions))) invalid();
+    if (value.version === 3 && ['status', 'reason', 'pendingFingerprint', 'lastCompletedFingerprint', 'latest', 'accountPrimedAt', 'primedConversationId']
+        .some(key => !Object.prototype.hasOwnProperty.call(value, key))) invalid();
+    if (value.status !== undefined && !['idle', 'generating', 'stabilizing', 'completed', 'needs_human', 'error'].includes(value.status)) invalid();
+    if (value.reason !== undefined && (typeof value.reason !== 'string' || !value.reason.trim())) invalid();
+    if (value.conversationSawGenerating !== undefined && typeof value.conversationSawGenerating !== 'boolean') invalid();
+    if (value.recentFingerprints !== undefined && (!Array.isArray(value.recentFingerprints)
+        || value.recentFingerprints.some(item => typeof item !== 'string' || !item.trim()))) invalid();
+    if (value.accountConversationVersions !== undefined && (!object(value.accountConversationVersions)
+        || Object.values(value.accountConversationVersions).some(item => typeof item !== 'string'))) invalid();
+    for (const key of ['pendingFingerprint', 'lastCompletedFingerprint', 'candidateFingerprint', 'currentConversationId', 'primedConversationId', 'followUpConversationId', 'lastError']) {
+        if (!optionalString(value[key])) invalid();
+    }
+    for (const key of ['updatedAt', 'conversationSince', 'candidateSince', 'lastCompletedAt', 'pendingSince', 'ackedAt', 'accountPrimedAt', 'followUpSince']) {
+        if (value[key] != null && (typeof value[key] !== 'string' || !Number.isFinite(Date.parse(value[key])))) invalid();
+    }
+    if (value.latest != null && (!object(value.latest) || typeof value.latest.fingerprint !== 'string'
+        || !value.latest.fingerprint.trim() || typeof value.latest.text !== 'string'
+        || typeof value.latest.conversationId !== 'string' || !value.latest.conversationId.trim())) invalid();
+    if (value.pendingFingerprint && value.latest?.fingerprint !== value.pendingFingerprint) invalid();
+}
+
 function readState(filePath) {
+    let raw;
     try {
-        const state = { ...blankState(), ...JSON.parse(fs.readFileSync(filePath, 'utf8')) };
-        state.version = 3;
-        state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
-        state.accountConversationVersions = state.accountConversationVersions && typeof state.accountConversationVersions === 'object' && !Array.isArray(state.accountConversationVersions)
-            ? state.accountConversationVersions
-            : {};
-        return state;
-    } catch { return blankState(); }
+        raw = fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+        if (error.code === 'ENOENT') return blankState();
+        throw new WatcherStateError('state_unreadable', 'Watcher state cannot be read; check the file and its permissions before polling.');
+    }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { throw new WatcherStateError('state_invalid', 'Watcher state is invalid JSON; restore a valid backup before polling.'); }
+    validateState(parsed);
+    const state = { ...blankState(), ...parsed, version: 3 };
+    state.recentFingerprints = normalizeRecentFingerprints(state.recentFingerprints);
+    return state;
 }
 
 function writeStateAtomic(filePath, value) {
@@ -750,26 +796,53 @@ class ChatGPTWebWatcher {
         this.consentApprover = consentApprover || ((consent) => approveJitConsent(this.settings, consent));
         this.useAccountMode = !this.settings.conversationUrl && !snapshotReader;
         this.now = now || (() => Date.now());
+        this.operationQueue = Promise.resolve();
     }
 
     getState() { return readState(this.settings.statePath); }
-    getStatus() { return publicStatus(this.settings, this.getState()); }
+    stateError(error) {
+        if (!(error instanceof WatcherStateError)) throw error;
+        // Report the fault without replacing the file or exposing parser input.
+        return { ...blankState(), status: 'error', reason: error.reason, lastError: error.message };
+    }
+    inspectState() {
+        if (!this.settings.enabled) return blankState();
+        try { return this.getState(); }
+        catch (error) { return this.stateError(error); }
+    }
+    getStatus() { return publicStatus(this.settings, this.inspectState()); }
     getLatest() {
-        const state = this.getState();
+        const state = this.inspectState();
         return {
             enabled: this.settings.enabled,
             status: this.settings.enabled ? state.status : 'disabled',
+            ...(state.lastError ? { reason: state.reason, lastError: state.lastError } : {}),
             latest: state.latest ? { ...state.latest, pending: state.pendingFingerprint === state.latest.fingerprint } : null
         };
     }
     getPending() {
-        const state = this.getState();
+        const state = this.inspectState();
         const pending = state.pendingFingerprint && state.latest && state.latest.fingerprint === state.pendingFingerprint
             ? { ...state.latest, pendingSince: state.pendingSince }
             : null;
-        return { enabled: this.settings.enabled, status: this.settings.enabled ? state.status : 'disabled', pending };
+        return { enabled: this.settings.enabled, status: this.settings.enabled ? state.status : 'disabled',
+            ...(state.lastError ? { reason: state.reason, lastError: state.lastError } : {}), pending };
+    }
+    // Polls and acknowledgements share a queue, including manual REST polls.
+    // A failed operation must not poison subsequent queued operations.
+    runExclusive(operation) {
+        const result = this.operationQueue.then(operation);
+        this.operationQueue = result.catch(() => {});
+        return result;
     }
     ack(fingerprintValue) {
+        return this.runExclusive(() => {
+            if (!this.settings.enabled) return { acked: false, reason: 'disabled' };
+            try { return this.ackPending(fingerprintValue); }
+            catch (error) { return { ...publicStatus(this.settings, this.stateError(error)), acked: false }; }
+        });
+    }
+    ackPending(fingerprintValue) {
         const requested = String(fingerprintValue || '').trim();
         if (!requested) return { acked: false, reason: 'fingerprint_required' };
         const state = this.getState();
@@ -785,7 +858,7 @@ class ChatGPTWebWatcher {
     }
     save(state) { writeStateAtomic(this.settings.statePath, state); return state; }
 
-    async pollAccount() {
+    async pollAccountOnce() {
         let state = this.getState();
         const nowIso = new Date(this.now()).toISOString();
         if (!this.settings.enabled) return { ...publicStatus(this.settings, state), newResponse: false };
@@ -942,8 +1015,15 @@ class ChatGPTWebWatcher {
         return { ...publicStatus(this.settings, state), newResponse: true, baseline: false };
     }
 
-    async poll() {
-        if (this.useAccountMode) return await this.pollAccount();
+    poll() {
+        return this.runExclusive(async () => {
+            if (!this.settings.enabled) return { ...publicStatus(this.settings, blankState()), newResponse: false };
+            try { return await (this.useAccountMode ? this.pollAccountOnce() : this.pollConversationOnce()); }
+            catch (error) { return { ...publicStatus(this.settings, this.stateError(error)), newResponse: false }; }
+        });
+    }
+
+    async pollConversationOnce() {
         let state = this.getState();
         const nowMs = this.now();
         const nowIso = new Date(nowMs).toISOString();

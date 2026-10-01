@@ -33,26 +33,28 @@ This keeps the command executor independently useful while allowing additional c
 
 ## Near-term priorities
 
-### Authenticated web-conversation watcher — MVP1
+### Authenticated web-conversation watcher — consolidation
 
-MVP1 is implemented as a deliberately read-only, disabled-by-default browser/session capability. The initial target is an explicitly selected AI web conversation running in an operator-authenticated, persistent headful browser profile.
+The watcher is implemented as a disabled-by-default capability attached to an operator-authenticated Chromium session over loopback CDP. It supports account attention by default and observation of one conversation when a URL is configured. Account attention can approve one-time `runTerminalScript` consent for the configured Commander domain; conversation mode only observes.
 
-MVP1 should:
+The implementation should:
 
-- attach to or launch an explicitly configured persistent browser profile without owning the user's credentials;
-- inspect one explicitly selected conversation;
+- attach to an existing browser profile without owning the user's credentials;
+- inspect account attention or one explicitly selected conversation;
 - identify the latest assistant response using stable semantic/DOM signals where possible;
 - distinguish at least `idle`, `generating`, `completed` and `needs_human` states;
 - detect a new completed response exactly once through durable deduplication state;
 - return the completed response and minimal conversation metadata through a typed API;
 - expose status/latest/pending/ack operations without requiring an LLM in the polling loop;
 - keep watcher state local and exclude browser profiles, cookies and conversation data from Git;
-- fail safely when login, CAPTCHA, consent or unexpected UI changes require human takeover;
-- remain read-only: MVP1 must not submit messages, click confirmation dialogs or perform account-changing actions.
+- fail safely when login, CAPTCHA, unmatched consent or unexpected UI changes require human takeover;
+- serialize polls and acknowledgements within one process and preserve corrupt state for recovery;
+- allow the operator to enable/disable all watcher activity through `chatgptWeb.enabled` or `CHATGPT_WEB_ENABLED` at startup;
+- keep consent limited to the configured domain and operation, without submitting user replies.
 
 The first intended consumer is an isolated OpenClaw relay agent connected to a separate Telegram bot. Commander should only report deterministic conversation state and response content; the agent may summarize the response and suggest what the operator could say next. Telegram-specific logic does not belong in Commander.
 
-Success criteria for MVP1:
+Success criteria:
 
 1. a watched conversation can generate a response while the mobile client is closed;
 2. Commander reliably detects completion and emits one new-response event/state transition;
@@ -62,12 +64,10 @@ Success criteria for MVP1:
 
 ### Web-conversation relay — MVP2
 
-Only after MVP1 is stable, consider explicit write capabilities:
+After consolidating the watcher, consider additional browser write capabilities:
 
 - submit a user-approved reply to a selected conversation;
 - stop or retry generation where the target UI supports it;
-- watch multiple conversations;
-- expose explicit acknowledgement/read state;
 - require confirmation for any sensitive or ambiguous browser action.
 
 Suggested replies remain an agent/client concern. Commander should transport the approved text, not decide what the user should say.

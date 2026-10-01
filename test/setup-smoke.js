@@ -98,6 +98,8 @@ const {
     assert.strictEqual(Object.hasOwn(created, 'host'), false);
     assert.strictEqual(Object.hasOwn(loadConfigFile(createdPath), 'host'), false);
     assert.strictEqual(created.productionDomain, 'https://new.example.com');
+    assert.deepStrictEqual(created.chatgptWeb, { enabled: false });
+    assert.deepStrictEqual(loadConfigFile(createdPath).chatgptWeb, { enabled: false });
     assert.strictEqual(created.authToken.length, 64);
     assert.strictEqual(created.mcpToken.length, 64);
     assert.strictEqual(fs.statSync(createdPath).mode & 0o777, 0o600);

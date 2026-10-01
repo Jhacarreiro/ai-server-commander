@@ -55,19 +55,19 @@ Capabilities should not depend on a particular UI. Telegram relays, OpenClaw age
 4. Tool arguments pass through the same parser and executor as REST.
 5. The result contains both text content for backward compatibility and `structuredContent` matching `outputSchema`.
 
-### Planned browser/session capability
+### Optional browser/session capability
 
-The first planned browser capability is a read-only watcher for an explicitly selected web conversation:
+The ChatGPT Web watcher is disabled by default and supports account attention or one configured conversation:
 
 1. An operator configures a persistent, already-authenticated browser profile outside the repository.
-2. The adapter attaches to or launches the browser through a narrow browser-control boundary.
-3. A deterministic watcher inspects one selected conversation without using an LLM for polling.
+2. The adapter attaches to the existing Chromium session through loopback CDP.
+3. A deterministic watcher inspects the account attention index or one selected conversation without using an LLM for polling.
 4. The watcher classifies state such as `idle`, `generating`, `completed` or `needs_human`.
-5. A durable response fingerprint prevents duplicate new-response events across restarts.
-6. REST/MCP clients can request status or the latest completed response.
-7. If login, CAPTCHA, consent or an unexpected UI state blocks safe observation, the adapter returns `needs_human` and stops autonomous recovery.
+5. Durable response fingerprints and pending/ACK state survive restarts; polls and ACKs share one mutation queue per instance.
+6. Authenticated REST clients can request status, latest/pending responses, ACK, or an explicit poll.
+7. Authentication or unmatched waiting state requires human attention. Browser and persisted-state faults surface as errors without replacing corrupt state.
 
-MVP1 is intentionally read-only. Sending messages or performing account-changing browser actions belongs to a later milestone with explicit confirmation semantics.
+Conversation mode only observes. Attention mode can send one-time JIT consent for `runTerminalScript` on the configured Commander domain. It does not submit user replies. `chatgptWeb.enabled` or its environment override controls all watcher activity at startup; disabling preserves state. See [the watcher contract](./chatgpt-web-mvp1.md) for details.
 
 ## Main modules
 
@@ -85,10 +85,10 @@ MVP1 is intentionally read-only. Sending messages or performing account-changing
 | `api/activityLog.js` | Redacted activity records and context. |
 | `api/notices.js` | Scoped operational notices. |
 | `serverModules/swaggerSetup.js` | OpenAPI generation. |
-| `serverModules/chatgptWebWatcher.js` | Disabled-by-default read-only ChatGPT Web snapshot, stability and dedup state. |
-| `api/chatgptWeb.js` | REST handlers for watcher status, latest response and explicit polling. |
+| `serverModules/chatgptWebWatcher.js` | ChatGPT Web observation, allowlisted consent, serialized poll/ACK, and durable state. |
+| `api/chatgptWeb.js` | Authenticated REST watcher handlers and background polling. |
 
-Browser/session code lives behind a dedicated adapter boundary rather than importing site-specific selectors into the command executor or protocol adapters. MVP1 uses OpenCLI CDP plumbing and keeps ChatGPT-specific observation in `chatgptWebWatcher.js`.
+Browser/session code lives behind a dedicated adapter boundary rather than importing site-specific selectors into the command executor or protocol adapters. The watcher uses CDP over WebSocket and keeps ChatGPT-specific observation and consent in `chatgptWebWatcher.js`.
 
 ## Execution lifecycle
 
