@@ -2,6 +2,8 @@
 
 The optional watcher attaches to an already-authenticated Chromium session over loopback CDP. It reports conversation state and completed assistant responses through authenticated REST routes. It is disabled by default and does not own browser credentials or submit user replies.
 
+For everyday on/off steps and an optional deployment-level browser supervisor, see [Watcher on/off and browser recovery](./watcher-operations.md). Connecting ChatGPT or Claude to Commander does not require this watcher; use [the client setup guide](./client-setup.md).
+
 ## Enable or disable
 
 Set the flag in `config.json` and restart the Commander process:
