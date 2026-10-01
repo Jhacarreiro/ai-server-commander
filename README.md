@@ -76,7 +76,7 @@ Claude / remote MCP client          ├── shared bounded executor ── hos
 That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. The optional browser watcher follows this pattern; future adapters can extend filesystem and remote-host access.
 
 See [docs/architecture.md](./docs/architecture.md) for request flows, trust boundaries and the module map.
-Set `chatgptWeb.enabled` to `true` or `false` in `config.json` and restart Commander to enable or disable the browser watcher. `CHATGPT_WEB_ENABLED` overrides that flag. Disabling preserves pending responses and deduplication state. See [docs/chatgpt-web-mvp1.md](./docs/chatgpt-web-mvp1.md) for modes, automatic consent behavior, and recovery.
+Set `chatgptWeb.enabled` to `true` or `false` in `config.json` and restart Commander to enable or disable the browser watcher. `CHATGPT_WEB_ENABLED` overrides that flag. An invalid value keeps the watcher disabled without stopping Commander. Disabling preserves pending responses and deduplication state. See [docs/chatgpt-web-mvp1.md](./docs/chatgpt-web-mvp1.md) for modes, automatic consent behavior, and recovery.
 
 ## Requirements
 
