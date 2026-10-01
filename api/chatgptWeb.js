@@ -3,12 +3,13 @@ const { ChatGPTWebWatcher, resolveChatGPTWebConfig } = require('../serverModules
 let singleton = null;
 let singletonKey = null;
 let pollTimer = null;
-let pollInFlight = false;
 
 function watcherFor(config) {
     const settings = resolveChatGPTWebConfig(config);
     const key = JSON.stringify(settings);
     if (!singleton || singletonKey !== key) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
         singleton = new ChatGPTWebWatcher({ settings });
         singletonKey = key;
     }
@@ -23,13 +24,10 @@ function nextPollDelay(watcher, _result) {
 function ensureBackgroundPolling(watcher) {
     if (!watcher.settings.enabled || pollTimer) return;
     const schedule = (delayMs) => {
+        if (watcher !== singleton || !watcher.settings.enabled) return;
         pollTimer = setTimeout(async () => {
+            if (watcher !== singleton || !watcher.settings.enabled) return;
             pollTimer = null;
-            if (pollInFlight) {
-                schedule(nextPollDelay(watcher, null));
-                return;
-            }
-            pollInFlight = true;
             let result = null;
             try {
                 result = await watcher.poll();
@@ -43,7 +41,6 @@ function ensureBackgroundPolling(watcher) {
             } catch (error) {
                 console.error('ChatGPT Web background poll failed:', error && error.message ? error.message : error);
             } finally {
-                pollInFlight = false;
                 schedule(nextPollDelay(watcher, result));
             }
         }, delayMs);
@@ -89,11 +86,11 @@ function disabled(res, watcher) {
  *       '200': { description: Pending response acknowledged }
  *       '400': { description: Fingerprint required }
  *       '409': { description: Fingerprint mismatch or nothing pending }
- *       '503': { description: Watcher disabled }
+ *       '503': { description: Watcher disabled or persisted state unavailable }
  * /api/chatgpt-web/poll:
  *   post:
  *     operationId: pollChatGPTWeb
- *     summary: Perform one deterministic read-only poll
+ *     summary: Poll ChatGPT Web (attention mode can approve allowlisted terminal consent)
  *     responses:
  *       '200': { description: Poll result }
  *       '503': { description: Watcher disabled }
@@ -112,9 +109,10 @@ function createChatGPTWebHandlers(config) {
         },
         ackHandler: async (req, res) => {
             if (disabled(res, watcher)) return;
-            const result = watcher.ack(req.body && req.body.fingerprint);
+            const result = await watcher.ack(req.body && req.body.fingerprint);
             if (result.acked) return res.json(result);
             if (result.reason === 'fingerprint_required') return res.status(400).json(result);
+            if (result.status === 'error') return res.status(503).json(result);
             return res.status(409).json(result);
         },
         pollHandler: async (req, res) => {

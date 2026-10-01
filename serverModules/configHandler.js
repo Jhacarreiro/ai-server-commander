@@ -194,6 +194,7 @@ async function createConfig({ configPath = DEFAULT_CONFIG_PATH, ask = defaultAsk
                 port: portAnswer || 3000,
                 useLocalTunnel: false,
                 productionDomain: productionDomainAnswer,
+                chatgptWeb: { enabled: false },
                 authToken: crypto.randomBytes(32).toString('hex'),
                 mcpToken: crypto.randomBytes(32).toString('hex')
             });

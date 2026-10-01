@@ -34,7 +34,7 @@ The longer-term direction is broader than terminal access: Commander should rema
 - OAuth discovery, dynamic client registration, authorization code + PKCE, access tokens and refresh tokens.
 - MCP tool title, input/output schemas, risk annotations, OAuth security schemes and structured content.
 - Backward-compatible legacy REST endpoint for existing Custom GPT Actions.
-- Experimental read-only ChatGPT Web watcher over OpenCLI/CDP, disabled by default.
+- Optional ChatGPT Web watcher over loopback CDP, disabled by default. Supports account attention or one conversation, durable pending/ACK state, and allowlisted terminal consent in attention mode.
 
 ## Architecture
 
@@ -52,10 +52,10 @@ Claude / remote MCP client          ├── shared bounded executor ── hos
                                                    └── notices
 ```
 
-That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. Planned examples include policy-aware read-only tools and an authenticated browser/session adapter for observing explicitly selected web conversations.
+That diagram is the current production baseline. The extension model keeps REST/MCP and future clients thin while adding optional typed capabilities behind the same control-plane boundary. The optional browser watcher follows this pattern; future adapters can extend filesystem and remote-host access.
 
 See [docs/architecture.md](./docs/architecture.md) for request flows, trust boundaries and the module map.
-See [docs/chatgpt-web-mvp1.md](./docs/chatgpt-web-mvp1.md) for the disabled-by-default browser watcher contract.
+Set `chatgptWeb.enabled` to `true` or `false` in `config.json` and restart Commander to enable or disable the browser watcher. `CHATGPT_WEB_ENABLED` overrides that flag. Disabling preserves pending responses and deduplication state. See [docs/chatgpt-web-mvp1.md](./docs/chatgpt-web-mvp1.md) for modes, automatic consent behavior, and recovery.
 
 ## Requirements
 
