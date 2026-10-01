@@ -4,7 +4,10 @@ Connect an assistant to Commander, then start with a read-only command. The assi
 
 ## Before you start
 
-You need a running Commander deployment and its public HTTPS origin, such as `https://commander.example.com`. Use your own hostname everywhere below.
+> [!IMPORTANT]
+> These instructions connect **your AI client** to **your Commander deployment**. If someone else installs Commander on another machine, they use their own hostname, their own credentials, and their own Custom GPT or client connection. Do not reuse another person's preconfigured GPT as the connection to your server.
+
+You need a running Commander deployment and its public HTTPS origin, such as `https://YOUR-COMMANDER-DOMAIN`. Use your own hostname everywhere below.
 
 | What you are configuring | URL | Authentication |
 |---|---|---|
@@ -20,8 +23,8 @@ The optional browser watcher can stay disabled. You do not need OpenClaw, OpenCL
 ## ChatGPT: Custom GPT Action
 
 1. Open your Custom GPT in the GPT editor and open its Action configuration.
-2. Import `https://commander.example.com/openapi.json` as the schema.
-3. Set authentication to **API Key**, with **Bearer** authentication. Enter the private `authToken` value as the key.
+2. Import `https://YOUR-COMMANDER-DOMAIN/openapi.json` from **your Commander deployment** as the schema.
+3. Set authentication to **API Key**, with **Bearer** authentication. Enter **your Commander deployment's** private `authToken` value as the key.
 4. Copy or adapt the [assistant instructions](../prompt.md) into the GPT's instructions and save the GPT.
 5. Ask: **"Use Commander to run `pwd && hostname` and report the output and exit code."**
 
@@ -33,7 +36,7 @@ See [OpenAI's GPT Action authentication guide](https://developers.openai.com/api
 
 1. In ChatGPT, enable **Developer mode** under **Settings > Security and login**, if your account and workspace allow it.
 2. Open **Plugins**, select the plus button, and create a connection named **AI Server Commander**.
-3. Enter `https://commander.example.com/mcp` as the server URL and use OAuth authentication. Commander supports dynamic client registration (DCR).
+3. Enter `https://YOUR-COMMANDER-DOMAIN/mcp` as the server URL and use OAuth authentication. Commander supports dynamic client registration (DCR).
 4. Complete authorization on your Commander origin using its approval code.
 5. Enable/select the connection in a new chat and ask it to run `pwd && hostname` using `run_terminal_command`.
 
@@ -42,7 +45,7 @@ Check for actual tool output and exit code, rather than a model-only reply. Acco
 ## Claude: web and Desktop
 
 1. Open **Customize > Connectors**. Select **+ > Add custom connector** and name it **AI Server Commander**.
-2. Enter `https://commander.example.com/mcp` and add the connector. Commander supports dynamic registration, so a manually supplied OAuth client ID/secret is normally unnecessary.
+2. Enter `https://YOUR-COMMANDER-DOMAIN/mcp` and add the connector. Commander supports dynamic registration, so a manually supplied OAuth client ID/secret is normally unnecessary.
 3. Select **Connect** and authorize on your Commander origin with its approval code.
 4. Enable the connector for your conversation using the chat's **+ > Connectors** menu.
 5. Ask: **"Use AI Server Commander to run `pwd && hostname`; report its output and exit code."**
@@ -56,7 +59,7 @@ See [Anthropic's custom remote connector guide](https://support.claude.com/en/ar
 In your local terminal, add the remote server with HTTP transport:
 
 ```bash
-claude mcp add --transport http --scope user commander https://commander.example.com/mcp
+claude mcp add --transport http --scope user commander https://YOUR-COMMANDER-DOMAIN/mcp
 claude
 ```
 
@@ -104,10 +107,10 @@ For mutations, send a fresh `operationId`. After a lost response, recover the re
 Use these public, read-only checks with your own origin:
 
 ```bash
-curl -i https://commander.example.com/openapi.json
-curl -i https://commander.example.com/.well-known/oauth-protected-resource/mcp
-curl -i https://commander.example.com/.well-known/oauth-authorization-server
-curl -i https://commander.example.com/mcp
+curl -i https://YOUR-COMMANDER-DOMAIN/openapi.json
+curl -i https://YOUR-COMMANDER-DOMAIN/.well-known/oauth-protected-resource/mcp
+curl -i https://YOUR-COMMANDER-DOMAIN/.well-known/oauth-authorization-server
+curl -i https://YOUR-COMMANDER-DOMAIN/mcp
 ```
 
 The unauthenticated MCP request should return `401` with a `WWW-Authenticate` discovery challenge. Do not use an execution route as a health probe.

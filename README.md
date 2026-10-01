@@ -15,14 +15,22 @@ The server does not provide model access or credits. It receives authenticated r
 
 ## Connect your assistant
 
+### One deployment, one user's server
+
+AI Server Commander is self-hosted. Each user installs Commander for their own machine, gets their own public HTTPS origin and authentication credentials, and connects their own AI assistant to that deployment.
+
+For ChatGPT Custom GPT Actions, each user configures **their own Custom GPT** with **their own Commander deployment's** `/openapi.json` and `authToken`. A GPT Action configured for one Commander deployment does not automatically switch to another person's server.
+
+**The repository is what you share, not a preconfigured GPT.** If another person installs Commander on another machine, they use their own Commander hostname, their own token, and their own GPT or other client connection.
+
 Start with [Connecting OpenAI and Claude](./docs/client-setup.md), which covers the URL, authentication and first test for each client.
 
 | Client | Connection | URL to enter |
 |---|---|---|
-| ChatGPT Custom GPT | Action with Bearer API-key authentication | `https://commander.example.com/openapi.json` |
-| ChatGPT custom MCP connection | Remote MCP with OAuth | `https://commander.example.com/mcp` |
-| Claude web / Desktop | Custom remote connector with OAuth | `https://commander.example.com/mcp` |
-| Claude Code | HTTP MCP server with OAuth | `https://commander.example.com/mcp` |
+| ChatGPT Custom GPT | Action with Bearer API-key authentication | `https://YOUR-COMMANDER-DOMAIN/openapi.json` |
+| ChatGPT custom MCP connection | Remote MCP with OAuth | `https://YOUR-COMMANDER-DOMAIN/mcp` |
+| Claude web / Desktop | Custom remote connector with OAuth | `https://YOUR-COMMANDER-DOMAIN/mcp` |
+| Claude Code | HTTP MCP server with OAuth | `https://YOUR-COMMANDER-DOMAIN/mcp` |
 
 Replace the example hostname with your server's public HTTPS origin. The browser watcher is optional: all four connections work with it disabled. See [watcher on/off and browser recovery](./docs/watcher-operations.md) for the separate browser lifecycle integration.
 
@@ -205,13 +213,13 @@ See [.env.example](./.env.example). The application does not automatically load 
 
 ## ChatGPT Custom GPT Actions
 
-Custom GPT Actions use the REST/OpenAPI adapter and remain the most broadly compatible ChatGPT path.
+Custom GPT Actions use the REST/OpenAPI adapter for accounts where Custom GPT editing and Actions are available.
 
 1. Deploy AI Server Commander on a public HTTPS origin.
 2. In the Custom GPT builder, add an Action.
-3. Import `https://commander.example.com/openapi.json`.
+3. Import `https://YOUR-COMMANDER-DOMAIN/openapi.json` from **your own Commander deployment**.
 4. Configure API-key authentication as a Bearer token.
-5. Use the `authToken` value from `config.json`.
+5. Use the `authToken` value from **your own deployment's** `config.json`.
 6. Add or adapt [prompt.md](./prompt.md) as the GPT instructions.
 7. Test first with a read-only command such as `pwd && hostname`.
 

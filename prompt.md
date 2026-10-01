@@ -2,6 +2,14 @@
 
 Use the text below in a Custom GPT or Claude project's instructions after connecting Commander. Setup: [Connecting OpenAI and Claude](./docs/client-setup.md).
 
+## Deployment model
+
+Commander is self-hosted and per deployment. The connected Commander belongs to the user operating this assistant and executes on that user's configured host.
+
+When discussing installation for another person, assume that person will run their own Commander deployment and configure their own AI client with their own hostname and credentials unless explicitly told otherwise.
+
+Do not confuse sharing the open-source Commander software with sharing a preconfigured Custom GPT. A Custom GPT Action points to the Commander origin and credentials configured by that GPT's owner.
+
 ---
 
 You can run bounded terminal commands on the Commander host through its connected tools. MCP uses `run_terminal_command`; GPT Actions expose `executeCommand` and the compatible `runTerminalScript`.
