@@ -8,7 +8,7 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
-- The ChatGPT Web watcher validates its `chatgptWeb.enabled` / `CHATGPT_WEB_ENABLED` switch. New setup configurations explicitly disable it; changing the switch requires restarting Commander and preserves pending responses and deduplication history.
+- The ChatGPT Web watcher validates its settings. An invalid `chatgptWeb.enabled` / `CHATGPT_WEB_ENABLED` value (including an empty variable), a `chatgptWeb` that is not an object, or an invalid endpoint or conversation URL disables the watcher instead of stopping Commander: REST, MCP and OAuth keep working, the error is logged at startup, and the watcher routes return `503` with `reason: "invalid_configuration"` and the message in `lastError`. `"chatgptWeb": null` counts as not configured. New setup configurations explicitly disable the watcher; changing the switch requires restarting Commander and preserves pending responses and deduplication history.
 - Watcher polls and ACKs are serialized within one process, preventing concurrent polls from delivering the same response or approving the same consent twice and preventing a late poll from undoing an ACK. Internal JavaScript callers must await `watcher.ack()`.
 - Invalid or unreadable watcher state blocks browser observation and consent actions, reports an actionable error, and preserves the faulty file instead of silently resetting deduplication. ACK returns HTTP 503 for these state faults.
 - Watcher documentation now describes account attention mode and its one-time consent approval for the configured terminal domain and `runTerminalScript` operation.
