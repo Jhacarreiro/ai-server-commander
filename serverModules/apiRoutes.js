@@ -14,7 +14,13 @@ module.exports = {
         addOAuthRoutes(app, config);
         const mcpHandler = createMcpHandler(config);
         app.all('/mcp', wrapAsync(mcpHandler));
+        // High-frequency poll endpoints: logging every hit flooded syslog (~1 req/2s).
+        const QUIET_PATHS = new Set(['/api/chatgpt-web/pending', '/api/chatgpt-web/status']);
         app.use((req, res, next) => {
+            if (QUIET_PATHS.has(req.path)) {
+                next();
+                return;
+            }
             const originalSend = res.send;
             const queryKeys = req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
             const bodyKeys = req.body && typeof req.body === 'object' ? Object.keys(req.body) : [];
