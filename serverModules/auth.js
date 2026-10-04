@@ -11,7 +11,9 @@ module.exports = (log, config) => ((req, res, next) => {
     const bearerHeader = req.headers['authorization'];
     const rawUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
     const fullUrl = rawUrl.replace(/([?&]token=)[^&]+/g, '$1***');
-    log('request auth check', fullUrl, Object.keys(req.headers));
+    if (req.path !== '/api/chatgpt-web/pending' && req.path !== '/api/chatgpt-web/status') {
+        log('request auth check', fullUrl, Object.keys(req.headers));
+    }
 
     const publicOAuthPaths = new Set([
         '/.well-known/oauth-protected-resource',
