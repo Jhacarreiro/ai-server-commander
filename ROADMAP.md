@@ -15,10 +15,11 @@ The boundary matters:
 
 This keeps the command executor independently useful while allowing additional capability adapters to share the same operational model.
 
-## Current baseline — v1.2.0
+## Current baseline — v2.0.0
 
 - Shared bounded executor for REST and MCP.
-- Inline command and multi-line script modes.
+- Inline command and multi-line script modes, with fail-fast defaults and an explicit or private working directory.
+- Read-only installation preflight, persistent state outside protected releases, and portable backup/rollback guidance.
 - Timeout and output caps.
 - Per-command activity IDs and targeted interruption.
 - Process-group termination with SIGKILL escalation, a concurrency cap, and a draining shutdown on `/api/restart`, `SIGTERM` and `SIGINT`.

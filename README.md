@@ -11,7 +11,9 @@ It exposes the same execution core through two primary client adapters:
 - **REST/OpenAPI** for ChatGPT Custom GPT Actions and automation clients.
 - **Remote MCP + OAuth** for Claude and other MCP-capable clients.
 
-The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v1.2.0 the production capability is the bounded host command executor.
+The server does not provide model access or credits. It receives authenticated requests, applies local policy and limits, invokes an explicitly enabled capability, and returns structured state or results. In v2.0.0 the production capability is the bounded host command executor.
+
+Upgrading from v1.x: read the [v2.0.0 migration notes](./docs/deployment.md#upgrading-to-v200) before replacing a running installation. The default shell error handling and working directory have changed.
 
 ## Connect your assistant
 

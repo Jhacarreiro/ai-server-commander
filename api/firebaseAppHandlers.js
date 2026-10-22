@@ -1,13 +1,28 @@
-const { getFirebaseAppByPublicId } = require('../serverModules/firebaseDB');
+const firebaseRepository = require('../serverModules/firebaseDB');
+
+function scriptJson(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+
+function browserConfig(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const result = {};
+    for (const field of ['apiKey', 'projectId', 'appId', 'authDomain', 'storageBucket', 'messagingSenderId', 'measurementId', 'databaseURL']) {
+        if (value[field] === undefined) continue;
+        if (typeof value[field] !== 'string' || !value[field].trim() || value[field].length > 2048) return null;
+        result[field] = value[field].trim();
+    }
+    return ['apiKey', 'projectId', 'appId'].every(field => result[field]) ? result : null;
+}
 
 function htmlEscape(value) {
     return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-async function viewAppHandler(req, res) {
+async function viewAppHandler(req, res, repository) {
     const { public_id } = req.params;
     try {
-        const appData = await getFirebaseAppByPublicId(public_id);
+        const appData = await repository.getFirebaseAppByPublicId(public_id);
         if (!appData) {
             return res.status(404).send('Application not found.');
         }
@@ -38,12 +53,13 @@ async function viewAppHandler(req, res) {
     }
 }
 
-const { getFirebaseAppByPrivateId } = require('../serverModules/firebaseDB');
-
-async function editAppHandler(req, res) {
+async function editAppHandler(req, res, { repository, webConfig }) {
     const { private_id } = req.params;
     try {
-        const appData = await getFirebaseAppByPrivateId(private_id);
+        if (!webConfig) {
+            return res.status(503).send('Firebase browser settings are not configured.');
+        }
+        const appData = await repository.getFirebaseAppByPrivateId(private_id);
         if (!appData) {
             return res.status(404).send('Application not found.');
         }
@@ -59,16 +75,7 @@ async function editAppHandler(req, res) {
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.21.0/firebase-app.js";
         import { getFirestore, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/9.21.0/firebase-firestore.js";
 
-        // Your web app's Firebase configuration
-        const firebaseConfig = {
-          apiKey: "AIzaSyDY-xzvZw-nzLZ4Zi4HI9B1bYI-VeRwGIM",
-          authDomain: "appcookbook-a6d17.firebaseapp.com",
-          projectId: "appcookbook-a6d17",
-          storageBucket: "appcookbook-a6d17.appspot.com",
-          messagingSenderId: "109493777387",
-          appId: "1:109493777387:web:eb87d3a352f15231d3dfae",
-          measurementId: "G-Z3TCSFW81L"
-        };
+        const firebaseConfig = ${scriptJson(webConfig)};
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
@@ -90,7 +97,7 @@ async function editAppHandler(req, res) {
 
         // Subscribe to changes
         document.addEventListener('DOMContentLoaded', (event) => {
-            const privateId = "${private_id}";
+            const privateId = ${scriptJson(String(private_id))};
             const q = query(collection(db, 'Apps'), where('privateId', '==', privateId));
             onSnapshot(q, (querySnapshot) => {
                 querySnapshot.forEach((doc) => {
@@ -142,4 +149,12 @@ async function editAppHandler(req, res) {
     }
 }
 
-module.exports = {viewAppHandler, editAppHandler};
+function createFirebaseAppHandlers({ firebaseWebConfig, repository = firebaseRepository } = {}) {
+    const webConfig = browserConfig(firebaseWebConfig);
+    return {
+        viewAppHandler: (req, res) => viewAppHandler(req, res, repository),
+        editAppHandler: (req, res) => editAppHandler(req, res, { repository, webConfig })
+    };
+}
+
+module.exports = { createFirebaseAppHandlers };
