@@ -55,7 +55,13 @@ function inspectInstallation(options) {
         check('direct_link:' + name, () => {
             const link = path.join(release, name);
             requireCondition(fs.lstatSync(link).isSymbolicLink());
-            requireCondition(fs.readlinkSync(link) === fs.realpathSync(target));
+            const destination = fs.readlinkSync(link);
+            // Directory aliases are valid (for example, an aliased state root).
+            // Keep the final target direct: a link through another release's
+            // config/runtime entry could disappear when that release is removed.
+            requireCondition(path.isAbsolute(destination));
+            requireCondition(!fs.lstatSync(destination).isSymbolicLink());
+            requireCondition(fs.realpathSync(destination) === fs.realpathSync(target));
         });
     }
     for (const file of criticalFiles) {

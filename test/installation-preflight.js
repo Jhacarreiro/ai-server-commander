@@ -31,6 +31,35 @@ function run(extra = []) {
         fs.symlinkSync(config, path.join(release, 'config.json'));
         fs.symlinkSync(runtime, path.join(release, 'runtime'));
         assert.strictEqual(run().status, 0);
+
+        const alias = path.join(fixture, 'state-alias');
+        fs.symlinkSync(state, alias);
+        for (const [name, target] of [['config.json', config], ['runtime', runtime]]) {
+            const link = path.join(release, name);
+            fs.unlinkSync(link);
+            fs.symlinkSync(path.join(alias, path.basename(target)), link);
+        }
+        assert.strictEqual(run().status, 0, 'directory aliases must resolve to the expected persistent state');
+        assert.strictEqual(run(['--config', path.join(alias, 'config.json'), '--runtime', path.join(alias, 'runtime')]).status, 0);
+
+        const configLink = path.join(release, 'config.json');
+        const wrongConfig = path.join(state, 'wrong-config.json');
+        fs.writeFileSync(wrongConfig, '{}');
+        fs.unlinkSync(configLink);
+        fs.symlinkSync(wrongConfig, configLink);
+        assert(run().data.checks.some(check => check.name === 'direct_link:config.json' && !check.ok), 'a different valid file is not the configured state');
+        fs.unlinkSync(configLink);
+        fs.symlinkSync('../state/config.json', configLink);
+        assert(run().data.checks.some(check => check.name === 'direct_link:config.json' && !check.ok), 'relative links are not stable direct links');
+
+        const oldRelease = path.join(fixture, 'releases', 'previous');
+        fs.mkdirSync(oldRelease);
+        fs.symlinkSync(config, path.join(oldRelease, 'config.json'));
+        fs.unlinkSync(configLink);
+        fs.symlinkSync(path.join(oldRelease, 'config.json'), configLink);
+        assert(run().data.checks.some(check => check.name === 'direct_link:config.json' && !check.ok), 'chains through an old release must still fail');
+        fs.unlinkSync(configLink);
+        fs.symlinkSync(config, configLink);
         assert.strictEqual(fs.readFileSync(path.join(runtime, 'oauth-state.json'), 'utf8'), oauth);
         assert.strictEqual(fs.readFileSync(path.join(runtime, 'activity.jsonl'), 'utf8'), activity);
         assert(!run().output.includes('synthetic-preflight-private-value'));
