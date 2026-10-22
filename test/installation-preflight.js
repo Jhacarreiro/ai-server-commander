@@ -49,7 +49,7 @@ function run(extra = []) {
         fs.symlinkSync(wrongConfig, configLink);
         assert(run().data.checks.some(check => check.name === 'direct_link:config.json' && !check.ok), 'a different valid file is not the configured state');
         fs.unlinkSync(configLink);
-        fs.symlinkSync('../state/config.json', configLink);
+        fs.symlinkSync('../../state/config.json', configLink);
         assert(run().data.checks.some(check => check.name === 'direct_link:config.json' && !check.ok), 'relative links are not stable direct links');
 
         const oldRelease = path.join(fixture, 'releases', 'previous');
