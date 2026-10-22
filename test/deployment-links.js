@@ -47,6 +47,16 @@ try {
     assert.strictEqual(fs.statSync(config).mode & 0o777, 0o600);
     console.log('PASS direct links survive deletion of the previous release and repeated invocation');
 
+    fs.chmodSync(next, 0o555);
+    try {
+        assert.strictEqual(run(next).status, 0, 'valid state links must work in a read-only release');
+        assert.strictEqual(fs.readFileSync(path.join(next, 'runtime', 'record.json'), 'utf8'), 'persistent data');
+        assert.strictEqual(fs.readFileSync(config, 'utf8'), '{"deploymentFixture":true}\n');
+        console.log('PASS already-correct links require no write access to the release');
+    } finally {
+        fs.chmodSync(next, 0o755);
+    }
+
     const blocked = makeRelease('blocked');
     fs.symlinkSync(config, path.join(blocked, 'config.json'));
     fs.mkdirSync(path.join(blocked, 'runtime'));
