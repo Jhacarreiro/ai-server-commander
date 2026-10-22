@@ -1,0 +1,32 @@
+[Unit]
+Description=AI Server Commander with a read-only installation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai-commander
+Group=ai-commander
+WorkingDirectory=/srv/commander-work
+Environment=NODE_ENV=production
+Environment=SAFE_MODE=true
+Environment=HOME=/srv/commander-work
+Environment=CONFIG_FILE_PATH=/etc/ai-server-commander/config.json
+Environment=OAUTH_STATE_PATH=/var/lib/ai-server-commander/runtime/oauth-state.json
+Environment=TOKEN_STORE_PATH=/var/lib/ai-server-commander/tokenStore.json
+StateDirectory=ai-server-commander
+StateDirectoryMode=0700
+ReadOnlyPaths=/opt/ai-server-commander /etc/ai-server-commander
+ReadWritePaths=/srv/commander-work
+ExecStart=/usr/bin/node /opt/ai-server-commander/current/main.js
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

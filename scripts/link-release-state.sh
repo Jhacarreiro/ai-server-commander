@@ -32,6 +32,14 @@ for name in config.json runtime; do
     fi
 done
 
+# Correct direct links need no write access to an immutable release.
+if [[ -L "$release/config.json" && -L "$release/runtime" &&
+      "$(readlink -- "$release/config.json")" == "$config" &&
+      "$(readlink -- "$release/runtime")" == "$runtime" ]]; then
+    echo "Persistent state links are already correct in $release"
+    exit 0
+fi
+
 temporary=$(mktemp -d -- "$release/.state-links.XXXXXX")
 cleanup() {
     rm -f -- "$temporary/config.json" "$temporary/runtime"

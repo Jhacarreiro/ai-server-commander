@@ -8,7 +8,7 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 
-const tokenStorePath = path.join(__dirname, "../tokenStore.json");
+const tokenStorePath = path.resolve(process.env.TOKEN_STORE_PATH || path.join(__dirname, "../tokenStore.json"));
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 const MAX_ACCESS_FILE_BYTES = Math.max(1024, Number.parseInt(process.env.MAX_ACCESS_FILE_BYTES || String(8 * 1024 * 1024), 10) || 8 * 1024 * 1024);
 const MAX_TOKEN_STORE_ENTRIES = Math.max(16, Number.parseInt(process.env.MAX_TOKEN_STORE_ENTRIES || "500", 10) || 500);
