@@ -6,10 +6,14 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+## [2.0.0] - 2026-10-22
+
 ### Breaking changes
 
 - Commands stop at unhandled shell errors by default, including inside script mode; Bash also enables `pipefail`. Commands that rely on continuing after a nonzero status must handle it explicitly with `if` or `||`. `COMMAND_FAIL_FAST=false` restores legacy shell execution.
 - Requests without `cwd` now use a private temporary workspace instead of the service user's home. Before upgrading, set `COMMAND_DEFAULT_CWD` to an existing absolute project workspace or update clients to send `cwd`. Relative paths may otherwise resolve differently. Existing OAuth and activity state paths are unchanged. See the [migration checklist](docs/deployment.md#execution-defaults-migration).
+
+- The optional legacy Firebase live-edit page requires explicit `firebaseWeb` settings for the deployment's own project. The built-in browser project configuration has been removed; without valid web settings, that page returns HTTP 503. Command execution, REST/MCP and OAuth do not require Firebase. See the [v2.0.0 upgrade notes](docs/deployment.md#upgrading-to-v200).
 
 ### Changed
 

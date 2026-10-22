@@ -131,6 +131,52 @@ Set `productionDomain` to `https://commander.example.com`.
 
 LocalTunnel support was removed in v1.0.8. Deployments upgrading from `useLocalTunnel: true` must move to a maintained reverse proxy, VPN or tunnel and set `productionDomain` to the external HTTPS origin.
 
+## Upgrading to v2.0.0
+
+Version 2.0.0 includes breaking execution defaults. Complete the
+[execution migration checklist](#execution-defaults-migration) before cutover:
+set `COMMAND_DEFAULT_CWD` deliberately or supply `cwd` on every request, and
+handle expected nonzero shell exits explicitly. `COMMAND_FAIL_FAST=false` restores
+legacy error handling only. It does not restore the old default directory.
+
+Keep the existing private configuration, OAuth state, activity logs and operation
+records at their persistent paths. Back up with writers stopped and use direct
+state links; never copy the example configuration over a working installation.
+Run the [read-only installation preflight](installation-preflight.md)
+and validate REST, MCP and the advertised OpenAPI/MCP version `2.0.0` after restart.
+Rollback changes the code while continuing to use current OAuth and activity state.
+The MCP wire protocol version remains `2025-03-26`.
+
+### Optional legacy Firebase live-edit page
+
+The legacy Firebase app view/edit integration remains optional. The live-edit page
+previously embedded a fixed browser Firebase project. It now requires the
+deployment's own `firebaseWeb` object in private `config.json`, for example:
+
+```json
+{
+  "firebaseWeb": {
+    "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
+    "authDomain": "your-project.firebaseapp.com",
+    "projectId": "your-project",
+    "appId": "YOUR_FIREBASE_WEB_APP_ID"
+  }
+}
+```
+
+Merge this optional object into the existing configuration only when using that
+feature. `apiKey`, `projectId` and `appId` must be nonempty strings. Optional
+`authDomain`, `storageBucket`, `messagingSenderId`, `measurementId` and `databaseURL`
+are also supported. These browser settings are intentionally sent to the edit
+page; never place service-account credentials or other secrets in this object.
+The server-side `firebaseAdmin.json` remains separate and untracked. Use a web app
+for the same project and enforce the appropriate Firebase security rules.
+
+Without valid browser settings the live-edit page returns HTTP 503. The normal
+public app view still uses the server's configured repository. REST/MCP execution
+and OAuth work without either Firebase configuration. Existing configurations are
+not rewritten, and this release does not enable Firebase or the browser watcher.
+
 ## Execution defaults migration
 
 The fail-fast and private-workspace defaults are breaking changes. Review the

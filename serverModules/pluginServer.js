@@ -50,7 +50,8 @@ expressApp.use((req, res, next) => {
 
 
 openapiSpecification(expressApp);
-    const {viewAppHandler, editAppHandler} = require('../api/firebaseAppHandlers');
+    const { createFirebaseAppHandlers } = require('../api/firebaseAppHandlers');
+    const { viewAppHandler, editAppHandler } = createFirebaseAppHandlers({ firebaseWebConfig: config.firebaseWeb });
     expressApp.get('/api/apps/view/:public_id', viewAppHandler);
     expressApp.get('/api/apps/edit/:private_id', editAppHandler);
     expressApp.get('/access/:token', require('./fileAccessHandler').retrieveFile);
