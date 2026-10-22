@@ -6,6 +6,11 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+### Breaking changes
+
+- Commands stop at unhandled shell errors by default, including inside script mode; Bash also enables `pipefail`. Commands that rely on continuing after a nonzero status must handle it explicitly with `if` or `||`. `COMMAND_FAIL_FAST=false` restores legacy shell execution.
+- Requests without `cwd` now use a private temporary workspace instead of the service user's home. Before upgrading, set `COMMAND_DEFAULT_CWD` to an existing absolute project workspace or update clients to send `cwd`. Relative paths may otherwise resolve differently. Existing OAuth and activity state paths are unchanged. See the [migration checklist](docs/deployment.md#execution-defaults-migration).
+
 ### Changed
 
 - Removed the unused `simple-git` dependency and its vulnerable parser chain; existing Git operations use the bounded Git subprocess implementation. Updated the Express dependency tree to patched `proxy-addr` 2.0.8. The runtime dependency audit reports no vulnerabilities with this lockfile.

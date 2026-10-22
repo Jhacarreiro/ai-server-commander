@@ -16,7 +16,8 @@ const {
     getActiveCommandIds,
     interruptCommand,
     positiveInteger,
-    resolveCwd
+    resolveCwd,
+    shellFlags
 } = require('../serverModules/commandExecutor');
 const {
     claimOperation,
@@ -315,7 +316,7 @@ async function executeCommand(parsed, activityContext = getActivityContext(null)
         if (mode === 'script') {
             const created = createScriptFile(script);
             scriptDir = created.scriptDir;
-            commandToRun = quoteShellArg(shell) + ' ' + quoteShellArg(created.scriptPath);
+            commandToRun = [shell, ...shellFlags(shell), created.scriptPath].map(quoteShellArg).join(' ');
             executionShell = shell;
         }
 

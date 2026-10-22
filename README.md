@@ -159,6 +159,31 @@ and its optional Linux service unit, backup procedure and persistent-state migra
 
 ## Configuration
 
+### Execution defaults (breaking change)
+
+Upgrades change both error handling and the default command directory. Review
+the [migration checklist](./docs/deployment.md#execution-defaults-migration)
+before deploying, including existing prompts and relative paths.
+
+Commands now stop at unhandled shell errors by default. A failed `cd` prevents
+later commands from running in the old directory; Bash also enables `pipefail`.
+The same policy applies inside script mode. Expected failures should be handled
+explicitly with `if` or `||`; Bash's normal `errexit` exceptions still apply.
+This reduces accidental damage and is not a sandbox or an authorization boundary.
+
+When `cwd` is omitted, Commander uses a private temporary workspace for the server
+account instead of its home or installation directory. Set `COMMAND_DEFAULT_CWD`
+to an existing absolute directory for a stable workspace, or pass `cwd` on each
+request. Temporary workspace contents are not deleted by Commander but may be
+removed by the operating system; retain important output elsewhere. An invalid
+configured directory rejects the request rather than falling back to `HOME`.
+
+`COMMAND_FAIL_FAST=false` explicitly restores the previous shell behavior for
+deployments that require it. Fail-fast mode supports Bash (`-e -o pipefail`) and
+`sh`, `dash`, or `ash` (`-e`); other shells require that explicit opt-out.
+For complex changes, send a script or a separate source file instead of nesting
+multiple languages and quoting layers inside an inline `-c` command.
+
 ### `config.json`
 
 | Key | Required | Purpose |
@@ -186,6 +211,8 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | Variable | Default | Purpose |
 |---|---:|---|
 | `SAFE_MODE` | `false` | Enables the built-in destructive-command denylist. Recommended for production. |
+| `COMMAND_FAIL_FAST` | `true` | Stop at unhandled errors; Bash also enables `pipefail`. Set `false` explicitly for legacy behavior. |
+| `COMMAND_DEFAULT_CWD` | private temporary workspace | Existing absolute directory used when a request omits `cwd`. Invalid settings reject the request. |
 | `COMMAND_TIMEOUT_MS` | `120000` | Server-wide maximum command duration. Client requests can ask for less, not more. |
 | `MAX_OUTPUT_CHARS` | `12000` | Server-wide maximum returned output. |
 | `MAX_SCRIPT_BODY_BYTES` | `524288` | Maximum script/request body size. |

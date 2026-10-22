@@ -11,6 +11,7 @@ WorkingDirectory=/srv/commander-work
 Environment=NODE_ENV=production
 Environment=SAFE_MODE=true
 Environment=HOME=/srv/commander-work
+Environment=COMMAND_DEFAULT_CWD=/srv/commander-work
 Environment=CONFIG_FILE_PATH=/etc/ai-server-commander/config.json
 Environment=OAUTH_STATE_PATH=/var/lib/ai-server-commander/runtime/oauth-state.json
 Environment=TOKEN_STORE_PATH=/var/lib/ai-server-commander/tokenStore.json
