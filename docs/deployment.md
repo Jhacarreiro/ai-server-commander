@@ -202,9 +202,13 @@ directory. It can be run again with the same persistent paths.
 If deployments copy a local startup wrapper from the previous release, install a
 copy of this helper outside the release tree and call it from that wrapper before
 starting Node, passing the current release and the fixed persistent state paths.
-This also repairs inherited symlink chains on future starts. Ensure the service
-user can update the two release symlinks, and keep the helper installed when
-cleaning old releases. Run deployments and wrapper updates serially.
+This also repairs inherited symlink chains on future starts when the service
+user can update the links. For a read-only installation, create both correct
+direct links during administrator-controlled deployment; subsequent helper calls
+need no write access. Incorrect links in a protected release must be repaired by
+the deployment owner. Keep the helper installed when cleaning old releases and
+run deployments and wrapper updates serially. See [installation protection](./installation-protection.md)
+for ownership, backup and rollback guidance.
 
 For an existing deployment, resolve and record both destinations with
 `readlink -e` before changing anything. If the configuration is inside an old

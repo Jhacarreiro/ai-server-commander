@@ -154,6 +154,9 @@ See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and 
 Use the [read-only installation preflight](./docs/installation-preflight.md) to
 detect missing restart prerequisites independently of HTTP health.
 
+For administrator-owned releases, see [installation protection](./docs/installation-protection.md)
+and its optional Linux service unit, backup procedure and persistent-state migration checks.
+
 ## Configuration
 
 ### `config.json`
@@ -207,6 +210,7 @@ LocalTunnel support was removed in v1.0.8 because its pinned HTTP dependency cha
 | `MAX_EDIT_FILE_BYTES` | `2097152` | Largest file `/api/read-or-edit-file` reads or edits; larger files get `413`. |
 | `MAX_ACCESS_FILE_BYTES` | `8388608` | Largest file served or diffed through an `/access/<token>` share link; larger files get `413`. |
 | `MAX_TOKEN_STORE_ENTRIES` | `500` | Maximum share-link tokens kept in `tokenStore.json`; the ones closest to expiry are dropped first. |
+| `TOKEN_STORE_PATH` | `tokenStore.json` in the installation | Optional external share-link store for read-only releases. Its private parent directory must already exist. |
 | `MAX_REPLACEMENTS` | `50` | Maximum replacements in one `/api/read-or-edit-file` request. |
 | `MAX_FUZZY_QUERY_CHARS` / `MAX_FUZZY_HAYSTACK_CHARS` | `256` / `262144` | Above these sizes a search text that is not found exactly is reported as not found instead of fuzzy-matched. |
 | `SHELL` | `/bin/bash` | Shell for inline commands and the script-mode default, for REST and MCP alike. When unset, `/bin/bash` is used, or `/bin/sh` if Bash is not installed. |
