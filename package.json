@@ -29,7 +29,6 @@
     "fastest-levenshtein": "^1.0.16",
     "js-beautify": "^1.15.4",
     "marked": "^14.1.4",
-    "simple-git": "^3.36.0",
     "swagger-jsdoc": "^6.3.0",
     "ws": "8.22.0"
   },
