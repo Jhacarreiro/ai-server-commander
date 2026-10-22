@@ -159,6 +159,12 @@ and its optional Linux service unit, backup procedure and persistent-state migra
 
 ## Configuration
 
+### Execution defaults (breaking change)
+
+Upgrades change both error handling and the default command directory. Review
+the [migration checklist](./docs/deployment.md#execution-defaults-migration)
+before deploying, including existing prompts and relative paths.
+
 Commands now stop at unhandled shell errors by default. A failed `cd` prevents
 later commands from running in the old directory; Bash also enables `pipefail`.
 The same policy applies inside script mode. Expected failures should be handled

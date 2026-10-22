@@ -131,6 +131,36 @@ Set `productionDomain` to `https://commander.example.com`.
 
 LocalTunnel support was removed in v1.0.8. Deployments upgrading from `useLocalTunnel: true` must move to a maintained reverse proxy, VPN or tunnel and set `productionDomain` to the external HTTPS origin.
 
+## Execution defaults migration
+
+The fail-fast and private-workspace defaults are breaking changes. Review the
+following before installing a release that includes them:
+
+1. Back up the active release, service configuration, private configuration and
+   complete current runtime with writers stopped. Retain existing OAuth and logs;
+   follow the [installation-protection backup procedure](installation-protection.md#back-up-before-enabling-protection).
+2. Inventory clients, prompts and runbooks that omit `cwd` or use relative paths.
+   Choose an existing absolute project workspace deliberately and configure
+   `COMMAND_DEFAULT_CWD`, or send `cwd` explicitly on every request. Preserve the
+   previous directory explicitly if those clients need it during migration.
+3. For systemd, a drop-in can contain
+   `Environment=COMMAND_DEFAULT_CWD=/srv/commander-work`. Create that directory
+   with private service-user ownership and allow it through `ReadWritePaths`
+   where needed. File-edit routes remain rooted at the service's `HOME`; align
+   it deliberately if commands and file editing should share this workspace.
+4. Review expected nonzero exit statuses. For example, `grep pattern file; echo
+   done` now stops when grep finds no match. Handle an expected no-match result
+   with `if` or `||`, and review pipelines because Bash now enables `pipefail`.
+   `COMMAND_FAIL_FAST=false` is a deliberate compatibility opt-out; it does not
+   restore the previous default directory.
+5. Validate in a staging copy before an approved cutover: check `pwd` with and
+   without explicit `cwd`, expected failure handling, REST/MCP execution, retained
+   activity and existing OAuth refresh. Reuse current persistent state on rollback
+   rather than overwriting newer tokens or logs with an older archive.
+
+These settings are read from the process environment. Commander does not load
+`.env.example` or install/restart a service automatically.
+
 ## Post-deployment validation
 
 ```bash
