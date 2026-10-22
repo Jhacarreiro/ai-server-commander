@@ -18,6 +18,10 @@ existing `OAUTH_STATE_PATH` overrides the default runtime OAuth file. Retain the
 deployment's existing value. `--require-oauth-state` is appropriate after OAuth
 has been used; without it, an uncreated store is allowed for a fresh installation.
 
+Absolute state links may use directory aliases; their resolved destinations must
+match the supplied configuration/runtime paths. The final target must not itself
+be a symlink, so chains through another release's state entries still fail.
+
 `--node PATH` checks the executable used by the service instead of the executable
 running the check. Repeat `--require-executable PATH` for external startup
 wrappers or state-link helpers. The command checks critical source syntax,
