@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 
 function positiveInteger(value, fallback) {
     const parsed = Number(value);
@@ -20,6 +22,16 @@ const MAX_SHELL_BYTES = 256;
 const SAFE_MODE = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAFE_MODE || 'false').toLowerCase());
 // One default for inline commands and scripts, REST and MCP alike.
 const DEFAULT_SHELL = process.env.SHELL || (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh');
+const COMMAND_FAIL_FAST = !['0', 'false', 'no', 'off'].includes(String(process.env.COMMAND_FAIL_FAST || 'true').toLowerCase());
+let defaultWorkspace;
+
+function shellFlags(shell) {
+    if (!COMMAND_FAIL_FAST) return [];
+    const name = path.basename(shell).toLowerCase();
+    if (name === 'bash') return ['-e', '-o', 'pipefail'];
+    if (['sh', 'dash', 'ash'].includes(name)) return ['-e'];
+    throw new Error('Fail-fast execution requires bash, sh, dash or ash; configure a supported shell or explicitly disable COMMAND_FAIL_FAST.');
+}
 
 // Cut to at most maxChars UTF-16 units without leaving a lone high surrogate,
 // which JSON consumers such as Python reject ("surrogates not allowed").
@@ -129,9 +141,31 @@ function sanitizeCwd(raw) {
     }
 }
 
-function resolveCwd(raw, fallback = process.env.HOME || process.cwd()) {
+function resolveCwd(raw) {
     if (typeof raw === 'undefined' || raw === null || raw === '') {
-        return { cwd: fallback };
+        const configured = process.env.COMMAND_DEFAULT_CWD;
+        if (configured !== undefined) {
+            const cwd = path.isAbsolute(configured) && sanitizeCwd(configured);
+            return cwd ? { cwd } : { error: 'COMMAND_DEFAULT_CWD must be an existing absolute directory.' };
+        }
+        try {
+            if (!defaultWorkspace) {
+                const owner = process.getuid ? String(process.getuid()) : crypto.createHash('sha256').update(os.homedir()).digest('hex').slice(0, 16);
+                const candidate = path.join(os.tmpdir(), 'ai-server-commander-work-' + owner);
+                try { fs.mkdirSync(candidate, { mode: 0o700 }); }
+                catch (error) { if (error.code !== 'EEXIST') throw error; }
+                defaultWorkspace = candidate;
+            }
+            const metadata = fs.lstatSync(defaultWorkspace);
+            if (!metadata.isDirectory() || metadata.isSymbolicLink() ||
+                (process.getuid && metadata.uid !== process.getuid())) {
+                throw new Error('Unsafe default workspace');
+            }
+            fs.chmodSync(defaultWorkspace, 0o700);
+            const cwd = sanitizeCwd(defaultWorkspace);
+            if (cwd) return { cwd };
+        } catch { /* Never fall back to HOME or the installation directory. */ }
+        return { error: 'The default command workspace is unavailable; supply an explicit cwd.' };
     }
     const cwd = sanitizeCwd(raw);
     return cwd ? { cwd } : { error: 'Working directory does not exist or is not a readable directory.' };
@@ -145,7 +179,7 @@ function findBlockedPattern(command) {
 // exec() silently ignores `detached`, so commands never got their own process
 // group and group signals missed pipelines and background children.
 function spawnShellCommand(command, { shell, cwd, maxBuffer }, onOverflow, callback) {
-    const child = spawn(shell, ['-c', command], {
+    const child = spawn(shell, [...shellFlags(shell), '-c', command], {
         cwd,
         detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe']
@@ -193,11 +227,14 @@ function executeBounded(options) {
     const {
         command,
         shell = DEFAULT_SHELL,
-        cwd = process.env.HOME || process.cwd(),
         timeoutMs = COMMAND_TIMEOUT_MS,
         maxOutputChars = MAX_OUTPUT_CHARS,
         activityId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
     } = options;
+
+    const cwdResult = resolveCwd(options.cwd);
+    if (cwdResult.error) return Promise.reject(new Error(cwdResult.error));
+    const cwd = cwdResult.cwd;
 
     const effectiveTimeout = Math.min(positiveInteger(timeoutMs, COMMAND_TIMEOUT_MS), COMMAND_TIMEOUT_MS);
     const effectiveMaxOutput = Math.min(positiveInteger(maxOutputChars, MAX_OUTPUT_CHARS), MAX_OUTPUT_CHARS);
@@ -309,6 +346,7 @@ function killPendingNow() {
 
 module.exports = {
     COMMAND_TIMEOUT_MS,
+    COMMAND_FAIL_FAST,
     DEFAULT_SHELL,
     MAX_CWD_BYTES,
     KILL_GRACE_MS,
@@ -326,6 +364,7 @@ module.exports = {
     positiveInteger,
     resolveCwd,
     sanitizeCwd,
+    shellFlags,
     sliceText,
     terminateAll
 };
