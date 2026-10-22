@@ -151,6 +151,9 @@ Use a reverse proxy such as Nginx, Caddy or a managed tunnel. Forward the origin
 
 See [docs/deployment.md](./docs/deployment.md) for systemd, Nginx, upgrades and rollback.
 
+Use the [read-only installation preflight](./docs/installation-preflight.md) to
+detect missing restart prerequisites independently of HTTP health.
+
 ## Configuration
 
 ### `config.json`

@@ -8,6 +8,7 @@
     "debug": "node --inspect-brk main.js",
     "dev": "pm2 start main.js --name 'servercommander'",
     "check": "node scripts/check-syntax.js",
+    "check:installation": "node scripts/check-installation.js",
     "test": "node scripts/run-tests.js"
   },
   "keywords": [
