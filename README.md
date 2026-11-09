@@ -592,3 +592,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before open
 ## License
 
 Licensed under the [MIT License](./LICENSE). See [NOTICE.md](./NOTICE.md) for project attribution.
+
+### ChatGPT plugin packaging
+
+An optional portable ChatGPT plugin client package is provided in [integrations/chatgpt-plugin](integrations/chatgpt-plugin/README.md). It reuses this servers existing OAuth-protected MCP endpoint and terminal executor; no second backend or deployment is needed. The public package uses a placeholder URL; configure a private copy for your deployment.
