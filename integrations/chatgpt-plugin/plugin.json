@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai-server-commander",
+  "version": "2.0.0",
+  "description": "Connect to an existing AI Server Commander deployment for bounded terminal operations over OAuth-protected MCP.",
+  "repository": "https://github.com/Jhacarreiro/ai-server-commander",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/terminal/SKILL.md",
+      "interface": {
+        "displayName": "AI Server Commander",
+        "shortDescription": "Use your existing self-hosted terminal bridge",
+        "longDescription": "Execute and inspect bounded commands and scripts on a server you control using the existing AI Server Commander MCP endpoint.",
+        "developerName": "AI Server Commander",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
+      }
+    }
+  }
+}

@@ -6,6 +6,11 @@ This project follows the spirit of [Keep a Changelog](https://keepachangelog.com
 
 ## Unreleased
 
+### Added
+
+- Portable ChatGPT plugin client package with OAuth MCP wiring and terminal workflow skill; uses the existing Commander service without changing its execution policy.
+
+
 ## [2.0.0] - 2026-10-22
 
 ### Breaking changes
